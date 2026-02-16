@@ -23,8 +23,11 @@ export type Task = {
   id: string
   title: string
   description: string | null
+  priority: string
   order: number
   columnId: string
+  startDate: string | null
+  endDate: string | null
   createdAt: string
   updatedAt: string
 }
@@ -33,6 +36,8 @@ export type Column = {
   id: string
   title: string
   order: number
+  isStart: boolean
+  isEnd: boolean
   boardId: string
   tasks: Task[]
   createdAt: string
@@ -43,6 +48,7 @@ export type Board = {
   id: string
   title: string
   userId: string
+  jiraBaseUrl: string | null
   columns: Column[]
   createdAt: string
   updatedAt: string

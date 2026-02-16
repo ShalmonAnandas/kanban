@@ -20,13 +20,14 @@ model User {
 }
 
 model Board {
-  id        String   @id @default(cuid())
-  title     String
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  columns   Column[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  title       String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  columns     Column[]
+  jiraBaseUrl String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([userId])
   @@map("boards")
@@ -36,6 +37,8 @@ model Column {
   id        String   @id @default(cuid())
   title     String
   order     Int
+  isStart   Boolean  @default(false)
+  isEnd     Boolean  @default(false)
   boardId   String
   board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
   tasks     Task[]
@@ -47,14 +50,17 @@ model Column {
 }
 
 model Task {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
   description String?
+  priority    String    @default("medium")
   order       Int
   columnId    String
-  column      Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  column      Column    @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([columnId])
   @@map("tasks")

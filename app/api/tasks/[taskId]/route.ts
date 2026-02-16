@@ -39,6 +39,7 @@ export async function PATCH(
         ...(body.description !== undefined && { description: body.description }),
         ...(body.order !== undefined && { order: body.order }),
         ...(body.columnId !== undefined && { columnId: body.columnId }),
+        ...(body.priority !== undefined && { priority: body.priority }),
       },
     })
     

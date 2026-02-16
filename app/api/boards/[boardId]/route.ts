@@ -89,7 +89,7 @@ export async function PATCH(
   try {
     const { boardId } = await params
     const userId = await getUserId()
-    const { title } = await request.json()
+    const body = await request.json()
     
     const board = await prisma.board.findFirst({
       where: {
@@ -107,7 +107,10 @@ export async function PATCH(
     
     const updatedBoard = await prisma.board.update({
       where: { id: boardId },
-      data: { title },
+      data: {
+        ...(body.title !== undefined && { title: body.title }),
+        ...(body.jiraBaseUrl !== undefined && { jiraBaseUrl: body.jiraBaseUrl }),
+      },
       include: {
         columns: {
           orderBy: { order: 'asc' },

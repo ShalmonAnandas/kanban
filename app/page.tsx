@@ -33,9 +33,9 @@ export default async function Home() {
         userId,
         columns: {
           create: [
-            { title: 'To Do', order: 0 },
+            { title: 'To Do', order: 0, isStart: true },
             { title: 'In Progress', order: 1 },
-            { title: 'Done', order: 2 },
+            { title: 'Done', order: 2, isEnd: true },
           ],
         },
       },
@@ -55,14 +55,20 @@ export default async function Home() {
   // Serialize dates to strings for client component
   const board: Board = {
     ...boardData,
+    jiraBaseUrl: boardData.jiraBaseUrl || null,
     createdAt: boardData.createdAt.toISOString(),
     updatedAt: boardData.updatedAt.toISOString(),
     columns: boardData.columns.map(col => ({
       ...col,
+      isStart: col.isStart,
+      isEnd: col.isEnd,
       createdAt: col.createdAt.toISOString(),
       updatedAt: col.updatedAt.toISOString(),
       tasks: col.tasks.map(task => ({
         ...task,
+        priority: task.priority,
+        startDate: task.startDate ? task.startDate.toISOString() : null,
+        endDate: task.endDate ? task.endDate.toISOString() : null,
         createdAt: task.createdAt.toISOString(),
         updatedAt: task.updatedAt.toISOString(),
       })),
