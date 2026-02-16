@@ -33,9 +33,9 @@ export default async function Home() {
         userId,
         columns: {
           create: [
-            { title: 'To Do', order: 0 },
+            { title: 'To Do', order: 0, isStart: true },
             { title: 'In Progress', order: 1 },
-            { title: 'Done', order: 2 },
+            { title: 'Done', order: 2, isEnd: true },
           ],
         },
       },
@@ -55,6 +55,7 @@ export default async function Home() {
   // Serialize dates to strings for client component
   const board: Board = {
     ...boardData,
+    jiraBaseUrl: boardData.jiraBaseUrl || null,
     createdAt: boardData.createdAt.toISOString(),
     updatedAt: boardData.updatedAt.toISOString(),
     columns: boardData.columns.map(col => ({
@@ -63,6 +64,8 @@ export default async function Home() {
       updatedAt: col.updatedAt.toISOString(),
       tasks: col.tasks.map(task => ({
         ...task,
+        startDate: task.startDate ? task.startDate.toISOString() : null,
+        endDate: task.endDate ? task.endDate.toISOString() : null,
         createdAt: task.createdAt.toISOString(),
         updatedAt: task.updatedAt.toISOString(),
       })),
@@ -70,16 +73,16 @@ export default async function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <h1 className="text-2xl font-bold text-gray-900">{board.title}</h1>
-          <p className="text-sm text-gray-600 mt-1">
+    <div className="min-h-screen">
+      <header className="backdrop-blur-lg bg-white/40 border-b border-white/30 shadow-sm">
+        <div className="max-w-full mx-auto px-6 py-4">
+          <h1 className="text-2xl font-bold text-gray-800 tracking-tight">{board.title}</h1>
+          <p className="text-sm text-gray-500 mt-1">
             Drag and drop tasks to organize your work
           </p>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto py-6">
+      <main className="max-w-full mx-auto py-6">
         <KanbanBoard initialBoard={board} />
       </main>
     </div>

@@ -5,7 +5,7 @@ import { getUserId } from '@/lib/session'
 export async function POST(request: Request) {
   try {
     const userId = await getUserId()
-    const { title, description, columnId } = await request.json()
+    const { title, description, columnId, priority } = await request.json()
     
     if (!title || !columnId) {
       return NextResponse.json(
@@ -22,6 +22,9 @@ export async function POST(request: Request) {
           userId,
         },
       },
+      include: {
+        board: true,
+      },
     })
     
     if (!column) {
@@ -29,6 +32,63 @@ export async function POST(request: Request) {
         { error: 'Column not found' },
         { status: 404 }
       )
+    }
+    
+    // Handle #jira prefix for bulk ticket creation
+    if (title.startsWith('#jira ')) {
+      const jiraBaseUrl = column.board.jiraBaseUrl
+      if (!jiraBaseUrl) {
+        return NextResponse.json(
+          { error: 'Board does not have a jiraBaseUrl configured' },
+          { status: 400 }
+        )
+      }
+
+      const numbers = title.slice(6).split(',').map((n: string) => n.trim()).filter(Boolean)
+      if (numbers.length === 0) {
+        return NextResponse.json(
+          { error: 'No ticket numbers provided' },
+          { status: 400 }
+        )
+      }
+
+      // Validate ticket numbers contain only alphanumeric characters and hyphens
+      const validTicket = /^[a-zA-Z0-9-]+$/
+      for (const num of numbers) {
+        if (!validTicket.test(num)) {
+          return NextResponse.json(
+            { error: `Invalid ticket number: ${num}` },
+            { status: 400 }
+          )
+        }
+      }
+
+      // Ensure jiraBaseUrl ends with a separator for clean concatenation
+      const baseUrl = jiraBaseUrl.endsWith('/') || jiraBaseUrl.endsWith('-') ? jiraBaseUrl : jiraBaseUrl + '/'
+
+      const lastTask = await prisma.task.findFirst({
+        where: { columnId },
+        orderBy: { order: 'desc' },
+      })
+      let nextOrder = (lastTask?.order ?? -1) + 1
+
+      const tasks = []
+      for (const num of numbers) {
+        const taskTitle = `[TICKET-${num}](${baseUrl}${num})`
+        const task = await prisma.task.create({
+          data: {
+            title: taskTitle,
+            description: description || null,
+            columnId,
+            priority: priority || 'medium',
+            order: nextOrder++,
+            ...(column.isStart && { startDate: new Date() }),
+          },
+        })
+        tasks.push(task)
+      }
+
+      return NextResponse.json(tasks, { status: 201 })
     }
     
     // Get the next order number
@@ -42,7 +102,9 @@ export async function POST(request: Request) {
         title,
         description: description || null,
         columnId,
+        priority: priority || 'medium',
         order: (lastTask?.order ?? -1) + 1,
+        ...(column.isStart && { startDate: new Date() }),
       },
     })
     

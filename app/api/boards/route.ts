@@ -49,9 +49,9 @@ export async function POST(request: Request) {
         userId,
         columns: {
           create: [
-            { title: 'To Do', order: 0 },
+            { title: 'To Do', order: 0, isStart: true },
             { title: 'In Progress', order: 1 },
-            { title: 'Done', order: 2 },
+            { title: 'Done', order: 2, isEnd: true },
           ],
         },
       },
