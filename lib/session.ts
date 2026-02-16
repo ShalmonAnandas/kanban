@@ -28,6 +28,10 @@ export async function getUserId(): Promise<string> {
       maxAge: COOKIE_MAX_AGE,
       path: '/',
     })
+
+    if (!cookieStore.get(USER_COOKIE_NAME)) {
+      throw new Error('Failed to set session cookie')
+    }
   }
 
   return userId
