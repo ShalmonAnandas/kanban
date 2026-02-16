@@ -21,6 +21,7 @@ import {
 import { KanbanColumn } from './KanbanColumn'
 import { TaskCard } from './TaskCard'
 import { Spinner } from './Spinner'
+import { fetchJiraIssueClientSide } from '@/lib/jira-client'
 
 export type Task = {
   id: string
@@ -458,6 +459,12 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     // Persist to backend
     setReordering(true)
     try {
+      console.log('[DragEnd] Persisting to backend:', {
+        taskId: activeId,
+        columnId: finalPosition.columnId,
+        newOrder: finalPosition.order,
+      })
+
       const response = await fetch('/api/tasks/reorder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -470,14 +477,17 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
       if (response.ok) {
         const updatedBoard = await response.json()
+        console.log('[DragEnd] Successfully persisted to backend')
         setBoard(serializeBoardDates(updatedBoard))
       } else {
+        const errorData = await response.text()
+        console.error('[DragEnd] Backend returned error:', response.status, errorData)
         if (dragStartBoardRef.current) {
           setBoard(dragStartBoardRef.current)
         }
       }
     } catch (error) {
-      console.error('Failed to reorder task:', error)
+      console.error('[DragEnd] Failed to reorder task:', error)
       if (dragStartBoardRef.current) {
         setBoard(dragStartBoardRef.current)
       }
@@ -488,6 +498,95 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   }
 
   const handleCreateTask = async (columnId: string, title: string, priority: string) => {
+    // Handle #jira prefix for bulk ticket creation (client-side)
+    if (title.startsWith('#jira ')) {
+      const jiraBaseUrl = board.jiraBaseUrl
+      if (!jiraBaseUrl) {
+        alert('Board does not have a JIRA Base URL configured')
+        return
+      }
+
+      const numbers = title.slice(6).split(',').map((n: string) => n.trim()).filter(Boolean)
+      if (numbers.length === 0) {
+        alert('No ticket numbers provided')
+        return
+      }
+
+      // Validate ticket numbers
+      const validTicket = /^[a-zA-Z0-9-]+$/
+      for (const num of numbers) {
+        if (!validTicket.test(num)) {
+          alert(`Invalid ticket number: ${num}`)
+          return
+        }
+      }
+
+      // Ensure jiraBaseUrl ends with a separator
+      const baseUrl = jiraBaseUrl.endsWith('/') || jiraBaseUrl.endsWith('-') ? jiraBaseUrl : jiraBaseUrl + '/'
+      const jiraPat = board.jiraPat
+
+      // Fetch JIRA issues client-side (in parallel)
+      const issuePromises = numbers.map(async (num) => {
+        let taskTitle = `[TICKET-${num}](${baseUrl}${num})`
+        let taskDescription = null
+
+        // If PAT is configured, fetch issue details from JIRA client-side
+        if (jiraPat) {
+          const issueData = await fetchJiraIssueClientSide(jiraBaseUrl, jiraPat, num)
+          if (issueData) {
+            taskTitle = `[${issueData.summary}](${baseUrl}${num})`
+            taskDescription = issueData.description
+          }
+        }
+
+        return { title: taskTitle, description: taskDescription }
+      })
+
+      const issueDetails = await Promise.all(issuePromises)
+
+      // Create tasks via API (one by one)
+      const createdTasks: Task[] = []
+      for (const details of issueDetails) {
+        const response = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: details.title,
+            description: details.description,
+            columnId,
+            priority: priority || 'medium',
+          }),
+        })
+
+        if (response.ok) {
+          const task = await response.json()
+          createdTasks.push(task)
+        }
+      }
+
+      // Update board state with new tasks
+      if (createdTasks.length > 0) {
+        setBoard((prevBoard) => {
+          const newColumns = prevBoard.columns.map((col) => {
+            if (col.id === columnId) {
+              const serialized = createdTasks.map((t: Task) => ({
+                ...t,
+                startDate: t.startDate ? String(t.startDate) : null,
+                endDate: t.endDate ? String(t.endDate) : null,
+                createdAt: String(t.createdAt),
+                updatedAt: String(t.updatedAt),
+              }))
+              return { ...col, tasks: [...col.tasks, ...serialized] }
+            }
+            return col
+          })
+          return { ...prevBoard, columns: newColumns }
+        })
+      }
+      return
+    }
+
+    // Regular task creation
     const response = await fetch('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
