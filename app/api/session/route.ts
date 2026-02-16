@@ -7,10 +7,31 @@ export async function GET(request: Request) {
     await getUserId()
     const url = new URL(request.url)
     const redirectTo = url.searchParams.get('redirect_to')
-    const safeRedirect =
-      redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')
-        ? redirectTo
-        : '/'
+    let safeRedirect = '/'
+
+    if (redirectTo) {
+      let redirectUrl: URL
+
+      try {
+        redirectUrl = new URL(redirectTo, url)
+      } catch (redirectError) {
+        console.warn('Invalid redirect_to parameter:', redirectError)
+        return NextResponse.json(
+          { error: 'Invalid redirect_to parameter' },
+          { status: 400 }
+        )
+      }
+
+      const isSafeRedirect =
+        redirectUrl.origin === url.origin &&
+        redirectTo.startsWith('/') &&
+        !redirectTo.startsWith('//') &&
+        !redirectTo.includes('\\')
+
+      if (isSafeRedirect) {
+        safeRedirect = `${redirectUrl.pathname}${redirectUrl.search}${redirectUrl.hash}`
+      }
+    }
 
     return NextResponse.redirect(new URL(safeRedirect, request.url))
   } catch (error) {
