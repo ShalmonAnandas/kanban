@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
 
-import { getUserId, getUserIdFromCookie } from '@/lib/session'
+import { getUserId } from '@/lib/session'
 
-export async function GET(req: Request) {
+export async function GET(request: Request) {
   try {
-    await getUserId()
-    const userId = await getUserIdFromCookie()
+    const userId = await getUserId()
 
     if (!userId) {
       return NextResponse.json(
@@ -14,7 +13,7 @@ export async function GET(req: Request) {
       )
     }
 
-    return NextResponse.redirect(new URL('/', req.url))
+    return NextResponse.redirect(new URL('/', request.url))
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error('Error initializing session:', errorMessage)
