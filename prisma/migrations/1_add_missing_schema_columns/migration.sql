@@ -1,0 +1,9 @@
+-- Align existing databases with current Prisma schema fields
+ALTER TABLE "boards" ADD COLUMN IF NOT EXISTS "jiraBaseUrl" TEXT;
+
+ALTER TABLE "columns" ADD COLUMN IF NOT EXISTS "isStart" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "columns" ADD COLUMN IF NOT EXISTS "isEnd" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "priority" TEXT NOT NULL DEFAULT 'medium';
+ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "startDate" TIMESTAMP(3);
+ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "endDate" TIMESTAMP(3);
