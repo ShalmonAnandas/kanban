@@ -505,23 +505,22 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     if (title.startsWith('#jira ')) {
       const jiraBaseUrl = board.jiraBaseUrl
       if (!jiraBaseUrl) {
-        alert('Board does not have a JIRA Base URL configured')
+        console.error('Board does not have a JIRA Base URL configured')
         return
       }
 
       const numbers = title.slice(6).split(',').map((n: string) => n.trim()).filter(Boolean)
       if (numbers.length === 0) {
-        alert('No ticket numbers provided')
+        console.error('No ticket numbers provided after #jira prefix')
         return
       }
 
       // Validate ticket numbers
       const validTicket = /^[a-zA-Z0-9-]+$/
-      for (const num of numbers) {
-        if (!validTicket.test(num)) {
-          alert(`Invalid ticket number: ${num}`)
-          return
-        }
+      const invalidTickets = numbers.filter(num => !validTicket.test(num))
+      if (invalidTickets.length > 0) {
+        console.error('Invalid ticket numbers:', invalidTickets.join(', '))
+        return
       }
 
       // Ensure jiraBaseUrl ends with a separator
@@ -542,15 +541,14 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
           }
         }
 
-        return { title: taskTitle, description: taskDescription }
+        return { title: taskTitle, description: taskDescription, ticketNum: num }
       })
 
       const issueDetails = await Promise.all(issuePromises)
 
-      // Create tasks via API (one by one)
-      const createdTasks: Task[] = []
-      for (const details of issueDetails) {
-        const response = await fetch('/api/tasks', {
+      // Create tasks via API (in parallel)
+      const taskPromises = issueDetails.map(details =>
+        fetch('/api/tasks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -559,12 +557,25 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
             columnId,
             priority: priority || 'medium',
           }),
+        }).then(async (response) => {
+          if (response.ok) {
+            return { success: true, task: await response.json(), ticketNum: details.ticketNum }
+          } else {
+            console.error(`Failed to create task for ticket ${details.ticketNum}:`, response.status)
+            return { success: false, ticketNum: details.ticketNum }
+          }
+        }).catch((error) => {
+          console.error(`Error creating task for ticket ${details.ticketNum}:`, error)
+          return { success: false, ticketNum: details.ticketNum }
         })
+      )
 
-        if (response.ok) {
-          const task = await response.json()
-          createdTasks.push(task)
-        }
+      const results = await Promise.all(taskPromises)
+      const createdTasks = results.filter((r): r is { success: true; task: Task; ticketNum: string } => r.success).map(r => r.task)
+      const failedTickets = results.filter(r => !r.success).map(r => r.ticketNum)
+
+      if (failedTickets.length > 0) {
+        console.error('Failed to create tasks for tickets:', failedTickets.join(', '))
       }
 
       // Update board state with new tasks
@@ -615,6 +626,8 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         })
         return { ...prevBoard, columns: newColumns }
       })
+    } else {
+      console.error('Failed to create task:', response.status)
     }
   }
 
