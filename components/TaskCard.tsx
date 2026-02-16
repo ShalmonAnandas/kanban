@@ -4,12 +4,12 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Task } from './KanbanBoard'
 
-const PRIORITY_CONFIG: Record<string, { badge: string; accent: string }> = {
-  critical: { badge: 'bg-red-100 text-red-700 ring-1 ring-red-200', accent: 'border-l-red-500' },
-  high: { badge: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200', accent: 'border-l-orange-400' },
-  medium: { badge: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200', accent: 'border-l-blue-400' },
-  low: { badge: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200', accent: 'border-l-emerald-400' },
-  nice_to_have: { badge: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200', accent: 'border-l-gray-300' },
+const PRIORITY_CONFIG: Record<string, { dot: string; badge: string; accent: string }> = {
+  critical: { dot: 'bg-red-500', badge: 'bg-red-50 text-red-700 border border-red-200', accent: 'border-l-red-500' },
+  high: { dot: 'bg-orange-500', badge: 'bg-orange-50 text-orange-700 border border-orange-200', accent: 'border-l-orange-400' },
+  medium: { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700 border border-blue-200', accent: 'border-l-blue-400' },
+  low: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', accent: 'border-l-emerald-400' },
+  nice_to_have: { dot: 'bg-gray-400', badge: 'bg-gray-50 text-gray-600 border border-gray-200', accent: 'border-l-gray-300' },
 }
 
 function formatDate(iso: string): string {
@@ -32,7 +32,7 @@ function renderTitle(title: string) {
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="text-violet-600 hover:text-violet-800 hover:underline font-semibold"
+          className="text-violet-600 hover:text-violet-800 hover:underline font-medium"
         >
           {match[1]}
         </a>
@@ -45,55 +45,58 @@ function renderTitle(title: string) {
 type TaskCardProps = {
   task: Task
   isDragging?: boolean
+  isOverlay?: boolean
   onDelete?: () => void
   onEdit?: (task: Task) => void
 }
 
-export function TaskCard({ task, isDragging, onDelete, onEdit }: TaskCardProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging: isSortableDragging,
-  } = useSortable({ id: task.id })
+export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit }: TaskCardProps) {
+  const sortable = useSortable({ id: task.id, disabled: isOverlay })
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging || isSortableDragging ? 0.5 : 1,
-  }
+  const style = isOverlay
+    ? { opacity: 0.9 }
+    : {
+        transform: CSS.Transform.toString(sortable.transform),
+        transition: sortable.transition,
+        opacity: sortable.isDragging ? 0.4 : 1,
+      }
 
   const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.medium
 
   const handleCardClick = () => {
-    if (onEdit && !isDragging && !isSortableDragging) {
+    if (onEdit && !isDragging && !isOverlay && !sortable.isDragging) {
       onEdit(task)
     }
   }
 
   return (
     <div
-      ref={setNodeRef}
+      ref={isOverlay ? undefined : sortable.setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
+      {...(isOverlay ? {} : sortable.attributes)}
+      {...(isOverlay ? {} : sortable.listeners)}
       onClick={handleCardClick}
-      className={`bg-white rounded-xl p-3.5 border border-gray-100 border-l-[3px] ${priority.accent} cursor-grab active:cursor-grabbing group ${
-        isDragging ? 'shadow-lg ring-2 ring-violet-200' : 'shadow-sm hover:shadow-md'
-      } transition-all duration-150`}
+      className={`bg-white rounded-lg p-3 border border-gray-200/80 border-l-[3px] ${priority.accent} group select-none ${
+        isDragging || isOverlay
+          ? 'shadow-xl ring-2 ring-violet-300/50 rotate-[1.5deg] scale-[1.02]'
+          : sortable.isDragging
+            ? 'opacity-40'
+            : 'shadow-sm hover:shadow-md hover:border-gray-300/80 cursor-grab active:cursor-grabbing'
+      } transition-shadow duration-150`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${priority.badge}`}>
-            {task.priority.replace('_', ' ')}
-          </span>
-          <h4 className="text-sm font-medium text-gray-800 mt-1.5 break-words leading-snug">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${priority.dot}`} />
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${priority.badge}`}>
+              {task.priority.replace('_', ' ')}
+            </span>
+          </div>
+          <h4 className="text-[13px] font-medium text-gray-800 break-words leading-snug">
             {renderTitle(task.title)}
           </h4>
           {task.description && (
-            <p className="text-xs text-gray-400 mt-1 line-clamp-2 break-words leading-relaxed">
+            <p className="text-xs text-gray-400 mt-1.5 line-clamp-2 break-words leading-relaxed">
               {task.description.length > 80
                 ? task.description.slice(0, 80) + '…'
                 : task.description}
@@ -107,17 +110,17 @@ export function TaskCard({ task, isDragging, onDelete, onEdit }: TaskCardProps) 
             </div>
           )}
         </div>
-        {onDelete && !isDragging && (
+        {onDelete && !isDragging && !isOverlay && (
           <button
             onClick={(e) => {
               e.stopPropagation()
               onDelete()
             }}
-            className="text-gray-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+            className="text-gray-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100 mt-0.5"
             aria-label="Delete task"
           >
             <svg
-              className="w-4 h-4"
+              className="w-3.5 h-3.5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
