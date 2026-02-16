@@ -99,7 +99,7 @@ export function KanbanColumn({
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               onBlur={handleRename}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleRename() }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') { setRenameValue(column.title); setIsRenaming(false) } }}
               className="text-sm font-semibold text-gray-800 bg-white/60 border border-white/50 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-300 w-full"
               autoFocus
             />
@@ -155,6 +155,7 @@ export function KanbanColumn({
                 <button
                   onClick={handleDelete}
                   className={`w-full text-left px-3 py-1.5 ${confirmDelete ? 'bg-red-100 text-red-700 font-semibold' : 'hover:bg-red-50/60 text-red-600'}`}
+                  aria-label={confirmDelete ? 'Press again to confirm deletion' : 'Delete column'}
                 >
                   {confirmDelete ? '⚠️ Confirm Delete?' : '🗑️ Delete Column'}
                 </button>

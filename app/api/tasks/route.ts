@@ -52,6 +52,20 @@ export async function POST(request: Request) {
         )
       }
 
+      // Validate ticket numbers contain only alphanumeric characters and hyphens
+      const validTicket = /^[a-zA-Z0-9-]+$/
+      for (const num of numbers) {
+        if (!validTicket.test(num)) {
+          return NextResponse.json(
+            { error: `Invalid ticket number: ${num}` },
+            { status: 400 }
+          )
+        }
+      }
+
+      // Ensure jiraBaseUrl ends with a separator for clean concatenation
+      const baseUrl = jiraBaseUrl.endsWith('/') || jiraBaseUrl.endsWith('-') ? jiraBaseUrl : jiraBaseUrl + '/'
+
       const lastTask = await prisma.task.findFirst({
         where: { columnId },
         orderBy: { order: 'desc' },
@@ -60,7 +74,7 @@ export async function POST(request: Request) {
 
       const tasks = []
       for (const num of numbers) {
-        const taskTitle = `[TICKET-${num}](${jiraBaseUrl}${num})`
+        const taskTitle = `[TICKET-${num}](${baseUrl}${num})`
         const task = await prisma.task.create({
           data: {
             title: taskTitle,

@@ -123,7 +123,9 @@ export async function POST(request: Request) {
         })
       }
       
-      // Update the task with date tracking based on column flags
+      // Update the task with date tracking based on column flags.
+      // startDate is preserved permanently once set (records when work began).
+      // endDate is set/cleared dynamically based on current column (tracks completion state).
       const dateUpdates: { startDate?: Date; endDate?: Date | null } = {}
       if (targetColumn.isEnd) {
         dateUpdates.endDate = new Date()

@@ -590,12 +590,12 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
       {/* Task Detail Modal */}
       {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={closeTaskModal}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="task-modal-title" onClick={closeTaskModal}>
           <div
             className="bg-white/80 backdrop-blur-xl border border-white/40 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-bold text-gray-800 mb-4">Edit Task</h2>
+            <h2 id="task-modal-title" className="text-lg font-bold text-gray-800 mb-4">Edit Task</h2>
 
             <label className="block text-xs font-medium text-gray-500 mb-1">Title</label>
             <input
