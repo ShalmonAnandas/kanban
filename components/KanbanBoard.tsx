@@ -18,6 +18,7 @@ import {
 } from '@dnd-kit/sortable'
 import { KanbanColumn } from './KanbanColumn'
 import { TaskCard } from './TaskCard'
+import { Spinner } from './Spinner'
 
 export type Task = {
   id: string
@@ -49,6 +50,7 @@ export type Board = {
   title: string
   userId: string
   jiraBaseUrl: string | null
+  jiraPat: string | null
   columns: Column[]
   createdAt: string
   updatedAt: string
@@ -83,6 +85,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   // Board settings
   const [showBoardSettings, setShowBoardSettings] = useState(false)
   const [jiraUrlInput, setJiraUrlInput] = useState(initialBoard.jiraBaseUrl || '')
+  const [jiraPatInput, setJiraPatInput] = useState('')
   const [savingJira, setSavingJira] = useState(false)
 
   // Add column
@@ -90,6 +93,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const [newColTitle, setNewColTitle] = useState('')
   const [newColIsStart, setNewColIsStart] = useState(false)
   const [newColIsEnd, setNewColIsEnd] = useState(false)
+  const [addingColumn, setAddingColumn] = useState(false)
 
   // Task detail modal
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
@@ -97,6 +101,9 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const [editDescription, setEditDescription] = useState('')
   const [editPriority, setEditPriority] = useState('medium')
   const [savingTask, setSavingTask] = useState(false)
+
+  // Global loading for reorder
+  const [reordering, setReordering] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -166,18 +173,27 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     }
   }
 
-  // Board settings: save JIRA URL
-  const handleSaveJiraUrl = async () => {
+  // Board settings: save JIRA URL and PAT
+  const handleSaveJiraSettings = async () => {
     setSavingJira(true)
     try {
+      const body: Record<string, string | null> = { jiraBaseUrl: jiraUrlInput || null }
+      if (jiraPatInput) {
+        body.jiraPat = jiraPatInput
+      }
       const response = await fetch(`/api/boards/${board.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jiraBaseUrl: jiraUrlInput || null }),
+        body: JSON.stringify(body),
       })
       if (response.ok) {
         const updated = await response.json()
-        setBoard((prev) => ({ ...prev, jiraBaseUrl: updated.jiraBaseUrl ?? null }))
+        setBoard((prev) => ({
+          ...prev,
+          jiraBaseUrl: updated.jiraBaseUrl ?? null,
+          jiraPat: updated.jiraPat ?? null,
+        }))
+        setJiraPatInput('')
         setShowBoardSettings(false)
       }
     } catch (error) {
@@ -191,6 +207,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const handleAddColumn = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newColTitle.trim()) return
+    setAddingColumn(true)
     try {
       const response = await fetch('/api/columns', {
         method: 'POST',
@@ -218,6 +235,8 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       }
     } catch (error) {
       console.error('Failed to add column:', error)
+    } finally {
+      setAddingColumn(false)
     }
   }
 
@@ -371,6 +390,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     }
 
     // Persist to backend
+    setReordering(true)
     try {
       const response = await fetch('/api/tasks/reorder', {
         method: 'POST',
@@ -390,49 +410,47 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       }
     } catch (error) {
       console.error('Failed to reorder task:', error)
+    } finally {
+      setReordering(false)
     }
   }
 
   const handleCreateTask = async (columnId: string, title: string, priority: string) => {
-    try {
-      const response = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title,
-          columnId,
-          priority,
-        }),
-      })
+    const response = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title,
+        columnId,
+        priority,
+      }),
+    })
 
-      if (response.ok) {
-        const result = await response.json()
-        // Handle both single task and array (jira batch) responses
-        const newTasks: Task[] = Array.isArray(result) ? result : [result]
-        setBoard((prevBoard) => {
-          const newColumns = prevBoard.columns.map((col) => {
-            if (col.id === columnId) {
-              const serialized = newTasks.map((t: Task) => ({
-                ...t,
-                startDate: t.startDate ? String(t.startDate) : null,
-                endDate: t.endDate ? String(t.endDate) : null,
-                createdAt: String(t.createdAt),
-                updatedAt: String(t.updatedAt),
-              }))
-              return {
-                ...col,
-                tasks: [...col.tasks, ...serialized],
-              }
+    if (response.ok) {
+      const result = await response.json()
+      // Handle both single task and array (jira batch) responses
+      const newTasks: Task[] = Array.isArray(result) ? result : [result]
+      setBoard((prevBoard) => {
+        const newColumns = prevBoard.columns.map((col) => {
+          if (col.id === columnId) {
+            const serialized = newTasks.map((t: Task) => ({
+              ...t,
+              startDate: t.startDate ? String(t.startDate) : null,
+              endDate: t.endDate ? String(t.endDate) : null,
+              createdAt: String(t.createdAt),
+              updatedAt: String(t.updatedAt),
+            }))
+            return {
+              ...col,
+              tasks: [...col.tasks, ...serialized],
             }
-            return col
-          })
-          return { ...prevBoard, columns: newColumns }
+          }
+          return col
         })
-      }
-    } catch (error) {
-      console.error('Failed to create task:', error)
+        return { ...prevBoard, columns: newColumns }
+      })
     }
   }
 
@@ -465,45 +483,77 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       minute: '2-digit',
     })
 
+  const hasJiraPat = !!board.jiraPat
+
   return (
     <>
       {/* Header actions */}
       <div className="flex items-center gap-3 px-6 mb-4">
         <button
-          onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || '') }}
-          className="px-4 py-2 text-sm bg-white/50 backdrop-blur-sm border border-white/30 rounded-xl hover:bg-white/70 transition-colors text-gray-700 shadow-sm"
+          onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || ''); setJiraPatInput('') }}
+          className="px-4 py-2 text-sm bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-600 shadow-sm font-medium"
         >
           ⚙️ Board Settings
         </button>
+        {hasJiraPat && (
+          <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full font-medium ring-1 ring-emerald-200">✓ JIRA Connected</span>
+        )}
       </div>
 
       {/* Board settings panel */}
       {showBoardSettings && (
-        <div className="mx-6 mb-4 p-4 backdrop-blur-lg bg-white/50 border border-white/30 rounded-2xl shadow-lg">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Board Settings</h3>
-          <label className="block text-xs text-gray-500 mb-1">JIRA Base URL</label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={jiraUrlInput}
-              onChange={(e) => setJiraUrlInput(e.target.value)}
-              placeholder="https://yourorg.atlassian.net/browse/"
-              className="flex-1 px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-300"
-            />
-            <button
-              onClick={handleSaveJiraUrl}
-              disabled={savingJira}
-              className="px-4 py-2 bg-purple-400/70 text-white rounded-xl hover:bg-purple-500/70 text-sm transition-colors disabled:opacity-50"
-            >
-              {savingJira ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              onClick={() => setShowBoardSettings(false)}
-              className="px-3 py-2 bg-white/50 text-gray-500 rounded-xl hover:bg-white/70 text-sm transition-colors"
-            >
-              Close
-            </button>
+        <div className="mx-6 mb-4 p-5 bg-white border border-gray-200 rounded-2xl shadow-sm">
+          <h3 className="text-sm font-bold text-gray-800 mb-4">Board Settings</h3>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">JIRA Base URL</label>
+              <input
+                type="text"
+                value={jiraUrlInput}
+                onChange={(e) => setJiraUrlInput(e.target.value)}
+                placeholder="https://yourorg.atlassian.net/browse/"
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">JIRA Personal Access Token (PAT)</label>
+              <input
+                type="password"
+                value={jiraPatInput}
+                onChange={(e) => setJiraPatInput(e.target.value)}
+                placeholder={hasJiraPat ? '••••••••  (already configured)' : 'Enter your JIRA PAT…'}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">Used to fetch issue titles and descriptions when creating #jira tasks</p>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleSaveJiraSettings}
+                disabled={savingJira}
+                className="px-4 py-2 bg-violet-500 text-white rounded-xl hover:bg-violet-600 text-sm transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-2"
+              >
+                {savingJira && <Spinner size="sm" className="text-white" />}
+                {savingJira ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={() => setShowBoardSettings(false)}
+                className="px-4 py-2 bg-white text-gray-500 rounded-xl hover:bg-gray-50 text-sm transition-colors border border-gray-200"
+              >
+                Close
+              </button>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Reorder loading indicator */}
+      {reordering && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2 shadow-lg">
+          <Spinner size="sm" className="text-violet-500" />
+          <span className="text-sm text-gray-600 font-medium">Saving…</span>
         </div>
       )}
 
@@ -530,14 +580,20 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
           {/* Add column button / form */}
           <div className="shrink-0 w-80">
             {showAddColumn ? (
-              <form onSubmit={handleAddColumn} className="backdrop-blur-md bg-white/30 rounded-2xl p-4 border border-white/30 shadow-lg">
-                <h4 className="text-sm font-semibold text-gray-700 mb-2">New Column</h4>
+              <form onSubmit={handleAddColumn} className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm relative">
+                {addingColumn && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-2xl">
+                    <Spinner size="md" className="text-violet-500" />
+                  </div>
+                )}
+                <h4 className="text-sm font-bold text-gray-800 mb-3">New Column</h4>
                 <input
                   type="text"
                   value={newColTitle}
                   onChange={(e) => setNewColTitle(e.target.value)}
                   placeholder="Column title…"
-                  className="w-full px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-300 mb-2"
+                  disabled={addingColumn}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
                   autoFocus
                 />
                 <div className="flex items-center gap-4 mb-3 text-xs text-gray-600">
@@ -546,7 +602,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
                       type="checkbox"
                       checked={newColIsStart}
                       onChange={(e) => setNewColIsStart(e.target.checked)}
-                      className="rounded"
+                      className="rounded border-gray-300 text-violet-500 focus:ring-violet-400"
                     />
                     🟢 Start
                   </label>
@@ -555,19 +611,24 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
                       type="checkbox"
                       checked={newColIsEnd}
                       onChange={(e) => setNewColIsEnd(e.target.checked)}
-                      className="rounded"
+                      className="rounded border-gray-300 text-violet-500 focus:ring-violet-400"
                     />
                     🔴 End
                   </label>
                 </div>
                 <div className="flex gap-2">
-                  <button type="submit" className="px-3 py-1.5 bg-purple-400/70 text-white rounded-xl hover:bg-purple-500/70 text-sm transition-colors">
+                  <button
+                    type="submit"
+                    disabled={addingColumn}
+                    className="px-3 py-1.5 bg-violet-500 text-white rounded-xl hover:bg-violet-600 text-sm transition-colors font-medium disabled:opacity-50"
+                  >
                     Create
                   </button>
                   <button
                     type="button"
+                    disabled={addingColumn}
                     onClick={() => { setShowAddColumn(false); setNewColTitle(''); setNewColIsStart(false); setNewColIsEnd(false) }}
-                    className="px-3 py-1.5 bg-white/50 text-gray-600 rounded-xl hover:bg-white/70 text-sm transition-colors"
+                    className="px-3 py-1.5 bg-white text-gray-600 rounded-xl hover:bg-gray-50 text-sm transition-colors border border-gray-200"
                   >
                     Cancel
                   </button>
@@ -576,7 +637,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
             ) : (
               <button
                 onClick={() => setShowAddColumn(true)}
-                className="w-full py-3 backdrop-blur-md bg-white/20 border border-dashed border-white/40 rounded-2xl text-gray-500 hover:bg-white/30 hover:text-gray-700 transition-colors text-sm"
+                className="w-full py-3 bg-white border border-dashed border-gray-300 rounded-2xl text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 transition-colors text-sm font-medium"
               >
                 + Add Column
               </button>
@@ -590,35 +651,35 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
       {/* Task Detail Modal */}
       {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="task-modal-title" onClick={closeTaskModal}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" role="dialog" aria-modal="true" aria-labelledby="task-modal-title" onClick={closeTaskModal}>
           <div
-            className="bg-white/80 backdrop-blur-xl border border-white/40 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6"
+            className="bg-white border border-gray-200 rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="task-modal-title" className="text-lg font-bold text-gray-800 mb-4">Edit Task</h2>
+            <h2 id="task-modal-title" className="text-lg font-bold text-gray-900 mb-5">Edit Task</h2>
 
-            <label className="block text-xs font-medium text-gray-500 mb-1">Title</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Title</label>
             <input
               type="text"
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-300 mb-3"
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-4"
             />
 
-            <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Description</label>
             <textarea
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
               rows={5}
-              className="w-full px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-300 mb-3 resize-y font-mono"
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-4 resize-y font-mono"
               placeholder="Add a description…"
             />
 
-            <label className="block text-xs font-medium text-gray-500 mb-1">Priority</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Priority</label>
             <select
               value={editPriority}
               onChange={(e) => setEditPriority(e.target.value)}
-              className="w-full px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-300 mb-3"
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-4"
             >
               <option value="critical">🔴 Critical</option>
               <option value="high">🟠 High</option>
@@ -628,15 +689,15 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
             </select>
 
             {(selectedTask.startDate || selectedTask.endDate) && (
-              <div className="flex gap-4 mb-3 text-xs text-gray-500">
+              <div className="flex gap-4 mb-4 text-xs text-gray-500">
                 {selectedTask.startDate && (
-                  <div>
-                    <span className="font-medium">Start:</span> {formatDateDisplay(selectedTask.startDate)}
+                  <div className="bg-gray-50 px-3 py-1.5 rounded-lg">
+                    <span className="font-semibold">Start:</span> {formatDateDisplay(selectedTask.startDate)}
                   </div>
                 )}
                 {selectedTask.endDate && (
-                  <div>
-                    <span className="font-medium">End:</span> {formatDateDisplay(selectedTask.endDate)}
+                  <div className="bg-gray-50 px-3 py-1.5 rounded-lg">
+                    <span className="font-semibold">End:</span> {formatDateDisplay(selectedTask.endDate)}
                   </div>
                 )}
               </div>
@@ -645,15 +706,16 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
             <div className="flex justify-end gap-2 mt-2">
               <button
                 onClick={closeTaskModal}
-                className="px-4 py-2 bg-white/50 text-gray-600 rounded-xl hover:bg-white/70 text-sm transition-colors"
+                className="px-4 py-2 bg-white text-gray-600 rounded-xl hover:bg-gray-50 text-sm transition-colors border border-gray-200 font-medium"
               >
                 Close
               </button>
               <button
                 onClick={handleSaveTask}
                 disabled={savingTask}
-                className="px-4 py-2 bg-purple-400/70 text-white rounded-xl hover:bg-purple-500/70 text-sm transition-colors disabled:opacity-50"
+                className="px-4 py-2 bg-violet-500 text-white rounded-xl hover:bg-violet-600 text-sm transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-2"
               >
+                {savingTask && <Spinner size="sm" className="text-white" />}
                 {savingTask ? 'Saving…' : 'Save'}
               </button>
             </div>
