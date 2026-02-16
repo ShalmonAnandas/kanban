@@ -1,11 +1,20 @@
 import { NextResponse } from 'next/server'
 
-import { getUserId } from '@/lib/session'
+import { getUserId, getUserIdFromCookie } from '@/lib/session'
 
-export async function GET(request: Request) {
+export async function GET(req: Request) {
   try {
     await getUserId()
-    return NextResponse.redirect(new URL('/', request.url))
+    const userId = await getUserIdFromCookie()
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Failed to initialize session' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.redirect(new URL('/', req.url))
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error('Error initializing session:', errorMessage)
