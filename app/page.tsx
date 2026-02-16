@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma'
 import { getUserIdFromCookie, SESSION_INIT_PATH } from '@/lib/session'
+import { MASKED_PAT } from '@/lib/constants'
 import { KanbanBoard, Board } from '@/components/KanbanBoard'
 import { redirect } from 'next/navigation'
 
@@ -56,7 +57,7 @@ export default async function Home() {
   const board: Board = {
     ...boardData,
     jiraBaseUrl: boardData.jiraBaseUrl || null,
-    jiraPat: boardData.jiraPat ? '••••••••' : null,
+    jiraPat: boardData.jiraPat ? MASKED_PAT : null,
     createdAt: boardData.createdAt.toISOString(),
     updatedAt: boardData.updatedAt.toISOString(),
     columns: boardData.columns.map(col => ({

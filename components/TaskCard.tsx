@@ -4,12 +4,12 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Task } from './KanbanBoard'
 
-const PRIORITY_CONFIG: Record<string, { badge: string; accent: string; label: string }> = {
-  critical: { badge: 'bg-red-100 text-red-700 ring-1 ring-red-200', accent: 'border-l-red-500', label: '🔴 critical' },
-  high: { badge: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200', accent: 'border-l-orange-400', label: '🟠 high' },
-  medium: { badge: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200', accent: 'border-l-blue-400', label: '🔵 medium' },
-  low: { badge: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200', accent: 'border-l-emerald-400', label: '🟢 low' },
-  nice_to_have: { badge: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200', accent: 'border-l-gray-300', label: '⚪ nice to have' },
+const PRIORITY_CONFIG: Record<string, { badge: string; accent: string }> = {
+  critical: { badge: 'bg-red-100 text-red-700 ring-1 ring-red-200', accent: 'border-l-red-500' },
+  high: { badge: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200', accent: 'border-l-orange-400' },
+  medium: { badge: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200', accent: 'border-l-blue-400' },
+  low: { badge: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200', accent: 'border-l-emerald-400' },
+  nice_to_have: { badge: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200', accent: 'border-l-gray-300' },
 }
 
 function formatDate(iso: string): string {
