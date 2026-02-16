@@ -120,9 +120,14 @@ if (response.ok) {
 
 ### 4. Anonymous User System
 
-Users are identified by a cuid stored in an httpOnly cookie:
+Users are identified by a cuid stored in an httpOnly cookie. Server components read the cookie
+and redirect to `/api/session` to initialize it when missing; route handlers create and set it.
 
 ```typescript
+export async function getUserIdFromCookie(): Promise<string | null> {
+  return cookieStore.get(USER_COOKIE_NAME)?.value ?? null
+}
+
 export async function getUserId(): Promise<string> {
   let userId = cookieStore.get(USER_COOKIE_NAME)?.value
   
@@ -131,7 +136,7 @@ export async function getUserId(): Promise<string> {
     userId = user.id
     cookieStore.set(USER_COOKIE_NAME, userId, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
     })
   }

@@ -1,9 +1,14 @@
 import prisma from '@/lib/prisma'
-import { getUserId } from '@/lib/session'
+import { getUserIdFromCookie } from '@/lib/session'
 import { KanbanBoard, Board } from '@/components/KanbanBoard'
+import { redirect } from 'next/navigation'
 
 export default async function Home() {
-  const userId = await getUserId()
+  const userId = await getUserIdFromCookie()
+
+  if (!userId) {
+    redirect('/api/session')
+  }
   
   // Get or create a default board for the user
   let boardData = await prisma.board.findFirst({
