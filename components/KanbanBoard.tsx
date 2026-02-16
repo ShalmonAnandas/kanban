@@ -58,9 +58,45 @@ type KanbanBoardProps = {
   initialBoard: Board
 }
 
+// Normalize date fields from API responses to ISO strings.
+// API may return Date objects or raw strings; this ensures consistent string types.
+function serializeBoardDates(raw: Board): Board {
+  return {
+    ...raw,
+    columns: raw.columns.map((col) => ({
+      ...col,
+      tasks: col.tasks.map((t) => ({
+        ...t,
+        startDate: t.startDate ? String(t.startDate) : null,
+        endDate: t.endDate ? String(t.endDate) : null,
+        createdAt: String(t.createdAt),
+        updatedAt: String(t.updatedAt),
+      })),
+    })),
+  }
+}
+
 export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const [board, setBoard] = useState<Board>(initialBoard)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
+
+  // Board settings
+  const [showBoardSettings, setShowBoardSettings] = useState(false)
+  const [jiraUrlInput, setJiraUrlInput] = useState(initialBoard.jiraBaseUrl || '')
+  const [savingJira, setSavingJira] = useState(false)
+
+  // Add column
+  const [showAddColumn, setShowAddColumn] = useState(false)
+  const [newColTitle, setNewColTitle] = useState('')
+  const [newColIsStart, setNewColIsStart] = useState(false)
+  const [newColIsEnd, setNewColIsEnd] = useState(false)
+
+  // Task detail modal
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editPriority, setEditPriority] = useState('medium')
+  const [savingTask, setSavingTask] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -76,6 +112,154 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   useEffect(() => {
     setBoard(initialBoard)
   }, [initialBoard])
+
+  // Open task detail modal
+  const openTaskModal = (task: Task) => {
+    setSelectedTask(task)
+    setEditTitle(task.title)
+    setEditDescription(task.description || '')
+    setEditPriority(task.priority)
+  }
+
+  const closeTaskModal = () => {
+    setSelectedTask(null)
+  }
+
+  const handleSaveTask = async () => {
+    if (!selectedTask) return
+    setSavingTask(true)
+    try {
+      const response = await fetch(`/api/tasks/${selectedTask.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle,
+          description: editDescription || null,
+          priority: editPriority,
+        }),
+      })
+      if (response.ok) {
+        const updatedTask: Task = await response.json()
+        setBoard((prev) => ({
+          ...prev,
+          columns: prev.columns.map((col) => ({
+            ...col,
+            tasks: col.tasks.map((t) =>
+              t.id === updatedTask.id
+                ? {
+                    ...updatedTask,
+                    startDate: updatedTask.startDate ? String(updatedTask.startDate) : null,
+                    endDate: updatedTask.endDate ? String(updatedTask.endDate) : null,
+                    createdAt: String(updatedTask.createdAt),
+                    updatedAt: String(updatedTask.updatedAt),
+                  }
+                : t
+            ),
+          })),
+        }))
+        setSelectedTask(null)
+      }
+    } catch (error) {
+      console.error('Failed to update task:', error)
+    } finally {
+      setSavingTask(false)
+    }
+  }
+
+  // Board settings: save JIRA URL
+  const handleSaveJiraUrl = async () => {
+    setSavingJira(true)
+    try {
+      const response = await fetch(`/api/boards/${board.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jiraBaseUrl: jiraUrlInput || null }),
+      })
+      if (response.ok) {
+        const updated = await response.json()
+        setBoard((prev) => ({ ...prev, jiraBaseUrl: updated.jiraBaseUrl ?? null }))
+        setShowBoardSettings(false)
+      }
+    } catch (error) {
+      console.error('Failed to save board settings:', error)
+    } finally {
+      setSavingJira(false)
+    }
+  }
+
+  // Add column
+  const handleAddColumn = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newColTitle.trim()) return
+    try {
+      const response = await fetch('/api/columns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          boardId: board.id,
+          title: newColTitle.trim(),
+          isStart: newColIsStart,
+          isEnd: newColIsEnd,
+        }),
+      })
+      if (response.ok) {
+        const newCol = await response.json()
+        const column: Column = {
+          ...newCol,
+          tasks: [],
+          createdAt: String(newCol.createdAt),
+          updatedAt: String(newCol.updatedAt),
+        }
+        setBoard((prev) => ({ ...prev, columns: [...prev.columns, column] }))
+        setNewColTitle('')
+        setNewColIsStart(false)
+        setNewColIsEnd(false)
+        setShowAddColumn(false)
+      }
+    } catch (error) {
+      console.error('Failed to add column:', error)
+    }
+  }
+
+  // Column settings callbacks
+  const handleUpdateColumn = async (columnId: string, data: Partial<Column>) => {
+    try {
+      const response = await fetch(`/api/columns/${columnId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (response.ok) {
+        const updated = await response.json()
+        setBoard((prev) => ({
+          ...prev,
+          columns: prev.columns.map((col) =>
+            col.id === columnId
+              ? { ...col, ...updated, tasks: col.tasks, createdAt: String(updated.createdAt), updatedAt: String(updated.updatedAt) }
+              : col
+          ),
+        }))
+      }
+    } catch (error) {
+      console.error('Failed to update column:', error)
+    }
+  }
+
+  const handleDeleteColumn = async (columnId: string) => {
+    try {
+      const response = await fetch(`/api/columns/${columnId}`, {
+        method: 'DELETE',
+      })
+      if (response.ok) {
+        setBoard((prev) => ({
+          ...prev,
+          columns: prev.columns.filter((col) => col.id !== columnId),
+        }))
+      }
+    } catch (error) {
+      console.error('Failed to delete column:', error)
+    }
+  }
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
@@ -202,14 +386,14 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
       if (response.ok) {
         const updatedBoard = await response.json()
-        setBoard(updatedBoard)
+        setBoard(serializeBoardDates(updatedBoard))
       }
     } catch (error) {
       console.error('Failed to reorder task:', error)
     }
   }
 
-  const handleCreateTask = async (columnId: string, title: string) => {
+  const handleCreateTask = async (columnId: string, title: string, priority: string) => {
     try {
       const response = await fetch('/api/tasks', {
         method: 'POST',
@@ -219,17 +403,27 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         body: JSON.stringify({
           title,
           columnId,
+          priority,
         }),
       })
 
       if (response.ok) {
-        const newTask = await response.json()
+        const result = await response.json()
+        // Handle both single task and array (jira batch) responses
+        const newTasks: Task[] = Array.isArray(result) ? result : [result]
         setBoard((prevBoard) => {
           const newColumns = prevBoard.columns.map((col) => {
             if (col.id === columnId) {
+              const serialized = newTasks.map((t: Task) => ({
+                ...t,
+                startDate: t.startDate ? String(t.startDate) : null,
+                endDate: t.endDate ? String(t.endDate) : null,
+                createdAt: String(t.createdAt),
+                updatedAt: String(t.updatedAt),
+              }))
               return {
                 ...col,
-                tasks: [...col.tasks, newTask],
+                tasks: [...col.tasks, ...serialized],
               }
             }
             return col
@@ -262,27 +456,210 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     }
   }
 
+  const formatDateDisplay = (iso: string) =>
+    new Date(iso).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCorners}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="flex gap-4 overflow-x-auto pb-4 px-4">
-        {board.columns.map((column) => (
-          <KanbanColumn
-            key={column.id}
-            column={column}
-            onCreateTask={handleCreateTask}
-            onDeleteTask={handleDeleteTask}
-          />
-        ))}
+    <>
+      {/* Header actions */}
+      <div className="flex items-center gap-3 px-6 mb-4">
+        <button
+          onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || '') }}
+          className="px-4 py-2 text-sm bg-white/50 backdrop-blur-sm border border-white/30 rounded-xl hover:bg-white/70 transition-colors text-gray-700 shadow-sm"
+        >
+          ⚙️ Board Settings
+        </button>
       </div>
-      <DragOverlay>
-        {activeTask ? <TaskCard task={activeTask} isDragging /> : null}
-      </DragOverlay>
-    </DndContext>
+
+      {/* Board settings panel */}
+      {showBoardSettings && (
+        <div className="mx-6 mb-4 p-4 backdrop-blur-lg bg-white/50 border border-white/30 rounded-2xl shadow-lg">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Board Settings</h3>
+          <label className="block text-xs text-gray-500 mb-1">JIRA Base URL</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={jiraUrlInput}
+              onChange={(e) => setJiraUrlInput(e.target.value)}
+              placeholder="https://yourorg.atlassian.net/browse/"
+              className="flex-1 px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-300"
+            />
+            <button
+              onClick={handleSaveJiraUrl}
+              disabled={savingJira}
+              className="px-4 py-2 bg-purple-400/70 text-white rounded-xl hover:bg-purple-500/70 text-sm transition-colors disabled:opacity-50"
+            >
+              {savingJira ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => setShowBoardSettings(false)}
+              className="px-3 py-2 bg-white/50 text-gray-500 rounded-xl hover:bg-white/70 text-sm transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex gap-4 overflow-x-auto pb-4 px-6 items-start">
+          {board.columns.map((column) => (
+            <KanbanColumn
+              key={column.id}
+              column={column}
+              onCreateTask={handleCreateTask}
+              onDeleteTask={handleDeleteTask}
+              onEditTask={openTaskModal}
+              onUpdateColumn={handleUpdateColumn}
+              onDeleteColumn={handleDeleteColumn}
+            />
+          ))}
+
+          {/* Add column button / form */}
+          <div className="shrink-0 w-80">
+            {showAddColumn ? (
+              <form onSubmit={handleAddColumn} className="backdrop-blur-md bg-white/30 rounded-2xl p-4 border border-white/30 shadow-lg">
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">New Column</h4>
+                <input
+                  type="text"
+                  value={newColTitle}
+                  onChange={(e) => setNewColTitle(e.target.value)}
+                  placeholder="Column title…"
+                  className="w-full px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-300 mb-2"
+                  autoFocus
+                />
+                <div className="flex items-center gap-4 mb-3 text-xs text-gray-600">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newColIsStart}
+                      onChange={(e) => setNewColIsStart(e.target.checked)}
+                      className="rounded"
+                    />
+                    🟢 Start
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newColIsEnd}
+                      onChange={(e) => setNewColIsEnd(e.target.checked)}
+                      className="rounded"
+                    />
+                    🔴 End
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" className="px-3 py-1.5 bg-purple-400/70 text-white rounded-xl hover:bg-purple-500/70 text-sm transition-colors">
+                    Create
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddColumn(false); setNewColTitle(''); setNewColIsStart(false); setNewColIsEnd(false) }}
+                    className="px-3 py-1.5 bg-white/50 text-gray-600 rounded-xl hover:bg-white/70 text-sm transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                onClick={() => setShowAddColumn(true)}
+                className="w-full py-3 backdrop-blur-md bg-white/20 border border-dashed border-white/40 rounded-2xl text-gray-500 hover:bg-white/30 hover:text-gray-700 transition-colors text-sm"
+              >
+                + Add Column
+              </button>
+            )}
+          </div>
+        </div>
+        <DragOverlay>
+          {activeTask ? <TaskCard task={activeTask} isDragging /> : null}
+        </DragOverlay>
+      </DndContext>
+
+      {/* Task Detail Modal */}
+      {selectedTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={closeTaskModal}>
+          <div
+            className="bg-white/80 backdrop-blur-xl border border-white/40 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-bold text-gray-800 mb-4">Edit Task</h2>
+
+            <label className="block text-xs font-medium text-gray-500 mb-1">Title</label>
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="w-full px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-300 mb-3"
+            />
+
+            <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+            <textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              rows={5}
+              className="w-full px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-300 mb-3 resize-y font-mono"
+              placeholder="Add a description…"
+            />
+
+            <label className="block text-xs font-medium text-gray-500 mb-1">Priority</label>
+            <select
+              value={editPriority}
+              onChange={(e) => setEditPriority(e.target.value)}
+              className="w-full px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-300 mb-3"
+            >
+              <option value="critical">🔴 Critical</option>
+              <option value="high">🟠 High</option>
+              <option value="medium">🔵 Medium</option>
+              <option value="low">🟢 Low</option>
+              <option value="nice_to_have">⚪ Nice to have</option>
+            </select>
+
+            {(selectedTask.startDate || selectedTask.endDate) && (
+              <div className="flex gap-4 mb-3 text-xs text-gray-500">
+                {selectedTask.startDate && (
+                  <div>
+                    <span className="font-medium">Start:</span> {formatDateDisplay(selectedTask.startDate)}
+                  </div>
+                )}
+                {selectedTask.endDate && (
+                  <div>
+                    <span className="font-medium">End:</span> {formatDateDisplay(selectedTask.endDate)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                onClick={closeTaskModal}
+                className="px-4 py-2 bg-white/50 text-gray-600 rounded-xl hover:bg-white/70 text-sm transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleSaveTask}
+                disabled={savingTask}
+                className="px-4 py-2 bg-purple-400/70 text-white rounded-xl hover:bg-purple-500/70 text-sm transition-colors disabled:opacity-50"
+              >
+                {savingTask ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
