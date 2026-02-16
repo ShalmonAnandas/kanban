@@ -132,6 +132,22 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     return columns.find((c) => c.tasks.some((t) => t.id === id))
   }, [])
 
+  // Helper: resolve the actual column ID from a task or column ID
+  const resolveColumnId = useCallback((id: UniqueIdentifier, columns: Column[]): string | undefined => {
+    const col = findColumnOfItem(id, columns)
+    if (!col) return undefined
+    return col.id === id ? (id as string) : col.id
+  }, [findColumnOfItem])
+
+  // Helper: get a task's current column ID and order index
+  const getTaskPosition = useCallback((taskId: string, columns: Column[]): { columnId: string; order: number } | undefined => {
+    for (const col of columns) {
+      const idx = col.tasks.findIndex((t) => t.id === taskId)
+      if (idx !== -1) return { columnId: col.id, order: idx }
+    }
+    return undefined
+  }, [])
+
   // Open task detail modal
   const openTaskModal = (task: Task) => {
     setSelectedTask(task)
@@ -308,14 +324,10 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     const overId = over.id as string
 
     setBoard((prevBoard) => {
-      const activeCol = findColumnOfItem(activeId, prevBoard.columns)
-      const overCol = findColumnOfItem(overId, prevBoard.columns)
+      const activeColId = resolveColumnId(activeId, prevBoard.columns)
+      const overColId = resolveColumnId(overId, prevBoard.columns)
 
-      if (!activeCol || !overCol) return prevBoard
-
-      // Determine actual column IDs
-      const activeColId = activeCol.tasks.some((t) => t.id === activeId) ? activeCol.id : activeId
-      const overColId = overCol.tasks.some((t) => t.id === overId) ? overCol.id : overId
+      if (!activeColId || !overColId) return prevBoard
 
       // Only handle cross-column moves in onDragOver
       if (activeColId === overColId) return prevBoard
@@ -362,10 +374,9 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     })
 
     // Update visual column highlight
-    const overCol = findColumnOfItem(overId, board.columns)
-    if (overCol) {
-      const colId = overCol.tasks.some((t) => t.id === overId) ? overCol.id : overId as string
-      setActiveColumnId(colId)
+    const overColId = resolveColumnId(overId, board.columns)
+    if (overColId) {
+      setActiveColumnId(overColId)
     }
   }
 
@@ -389,67 +400,47 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     // Apply within-column reordering and capture final state for API call.
     // The updater function runs synchronously and sees the latest state
     // (including any cross-column moves from handleDragOver).
-    let finalColumnId: string | undefined
-    let finalOrder: number | undefined
+    let finalPosition: { columnId: string; order: number } | undefined
 
     setBoard((prevBoard) => {
-      const activeCol = prevBoard.columns.find((c) => c.tasks.some((t) => t.id === activeId))
-      const overCol = findColumnOfItem(overId, prevBoard.columns)
+      const activeColId = resolveColumnId(activeId, prevBoard.columns)
+      const overColId = resolveColumnId(overId, prevBoard.columns)
 
-      if (!activeCol || !overCol) {
-        // Capture final position from current state
-        if (activeCol) {
-          finalColumnId = activeCol.id
-          finalOrder = activeCol.tasks.findIndex((t) => t.id === activeId)
-          if (finalOrder === -1) finalOrder = 0
-        }
-        return prevBoard
-      }
-
-      const overColId = overCol.tasks.some((t) => t.id === overId) ? overCol.id : overId as string
-
-      // Cross-column move was already handled by handleDragOver
-      if (activeCol.id !== overColId) {
-        finalColumnId = activeCol.id
-        finalOrder = activeCol.tasks.findIndex((t) => t.id === activeId)
-        if (finalOrder === -1) finalOrder = 0
+      if (!activeColId || !overColId || activeColId !== overColId) {
+        // Cross-column move was already handled by handleDragOver, just capture position
+        finalPosition = getTaskPosition(activeId, prevBoard.columns)
         return prevBoard
       }
 
       // Same-column reorder
-      const oldIndex = activeCol.tasks.findIndex((t) => t.id === activeId)
-      const newIndex = activeCol.tasks.findIndex((t) => t.id === overId)
+      const col = prevBoard.columns.find((c) => c.id === activeColId)
+      if (!col) {
+        finalPosition = getTaskPosition(activeId, prevBoard.columns)
+        return prevBoard
+      }
+
+      const oldIndex = col.tasks.findIndex((t) => t.id === activeId)
+      const newIndex = col.tasks.findIndex((t) => t.id === overId)
 
       if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
-        finalColumnId = activeCol.id
-        finalOrder = oldIndex !== -1 ? oldIndex : 0
+        finalPosition = getTaskPosition(activeId, prevBoard.columns)
         return prevBoard
       }
 
       const newBoard = {
         ...prevBoard,
-        columns: prevBoard.columns.map((col) => {
-          if (col.id !== activeCol.id) return col
-          const reordered = arrayMove(col.tasks, oldIndex, newIndex)
-          return {
-            ...col,
-            tasks: reordered.map((t, i) => ({ ...t, order: i })),
-          }
+        columns: prevBoard.columns.map((c) => {
+          if (c.id !== activeColId) return c
+          const reordered = arrayMove(c.tasks, oldIndex, newIndex)
+          return { ...c, tasks: reordered.map((t, i) => ({ ...t, order: i })) }
         }),
       }
 
-      // Capture final position after reorder
-      const updatedCol = newBoard.columns.find((c) => c.id === activeCol.id)
-      if (updatedCol) {
-        finalColumnId = updatedCol.id
-        finalOrder = updatedCol.tasks.findIndex((t) => t.id === activeId)
-        if (finalOrder === -1) finalOrder = 0
-      }
-
+      finalPosition = getTaskPosition(activeId, newBoard.columns)
       return newBoard
     })
 
-    if (!finalColumnId || finalOrder === undefined) {
+    if (!finalPosition) {
       dragStartBoardRef.current = null
       return
     }
@@ -457,13 +448,10 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     // Check if anything actually changed vs drag start
     const startBoard = dragStartBoardRef.current
     if (startBoard) {
-      const startCol = startBoard.columns.find((c) => c.tasks.some((t) => t.id === activeId))
-      if (startCol && startCol.id === finalColumnId) {
-        const startIdx = startCol.tasks.findIndex((t) => t.id === activeId)
-        if (startIdx === finalOrder) {
-          dragStartBoardRef.current = null
-          return
-        }
+      const startPos = getTaskPosition(activeId, startBoard.columns)
+      if (startPos && startPos.columnId === finalPosition.columnId && startPos.order === finalPosition.order) {
+        dragStartBoardRef.current = null
+        return
       }
     }
 
@@ -475,8 +463,8 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           taskId: activeId,
-          columnId: finalColumnId,
-          newOrder: finalOrder,
+          columnId: finalPosition.columnId,
+          newOrder: finalPosition.order,
         }),
       })
 
