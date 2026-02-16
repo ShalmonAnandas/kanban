@@ -75,21 +75,21 @@ export default async function Home() {
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-full mx-auto px-6 py-4 flex items-center gap-3">
-          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-violet-500 text-white font-bold text-lg shadow-sm">
+    <div className="min-h-screen bg-[#f5f5f7]">
+      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/60 sticky top-0 z-40">
+        <div className="max-w-full mx-auto px-6 py-3 flex items-center gap-3">
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-violet-600 text-white font-bold text-sm shadow-sm">
             K
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">{board.title}</h1>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Drag and drop tasks to organize your work
+            <h1 className="text-sm font-bold text-gray-900 tracking-tight">{board.title}</h1>
+            <p className="text-[10px] text-gray-400">
+              Drag tasks between columns to organize your work
             </p>
           </div>
         </div>
       </header>
-      <main className="max-w-full mx-auto py-6">
+      <main className="max-w-full mx-auto py-4">
         <KanbanBoard initialBoard={board} />
       </main>
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -12,9 +12,11 @@ import {
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
+  UniqueIdentifier,
 } from '@dnd-kit/core'
 import {
   sortableKeyboardCoordinates,
+  arrayMove,
 } from '@dnd-kit/sortable'
 import { KanbanColumn } from './KanbanColumn'
 import { TaskCard } from './TaskCard'
@@ -61,7 +63,6 @@ type KanbanBoardProps = {
 }
 
 // Normalize date fields from API responses to ISO strings.
-// API may return Date objects or raw strings; this ensures consistent string types.
 function serializeBoardDates(raw: Board): Board {
   return {
     ...raw,
@@ -81,6 +82,7 @@ function serializeBoardDates(raw: Board): Board {
 export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const [board, setBoard] = useState<Board>(initialBoard)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
+  const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
 
   // Board settings
   const [showBoardSettings, setShowBoardSettings] = useState(false)
@@ -105,10 +107,13 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   // Global loading for reorder
   const [reordering, setReordering] = useState(false)
 
+  // Track the board state at drag start for reliable backend persistence
+  const dragStartBoardRef = useRef<Board | null>(null)
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -119,6 +124,13 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   useEffect(() => {
     setBoard(initialBoard)
   }, [initialBoard])
+
+  // Helper: find which column contains a given task or is the column itself
+  const findColumnOfItem = useCallback((id: UniqueIdentifier, columns: Column[]): Column | undefined => {
+    const col = columns.find((c) => c.id === id)
+    if (col) return col
+    return columns.find((c) => c.tasks.some((t) => t.id === id))
+  }, [])
 
   // Open task detail modal
   const openTaskModal = (task: Task) => {
@@ -173,7 +185,6 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     }
   }
 
-  // Board settings: save JIRA URL and PAT
   const handleSaveJiraSettings = async () => {
     setSavingJira(true)
     try {
@@ -203,7 +214,6 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     }
   }
 
-  // Add column
   const handleAddColumn = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newColTitle.trim()) return
@@ -240,7 +250,6 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     }
   }
 
-  // Column settings callbacks
   const handleUpdateColumn = async (columnId: string, data: Partial<Column>) => {
     try {
       const response = await fetch(`/api/columns/${columnId}`, {
@@ -286,6 +295,9 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       .flatMap((col) => col.tasks)
       .find((t) => t.id === active.id)
     setActiveTask(task || null)
+    dragStartBoardRef.current = board
+    const col = board.columns.find((c) => c.tasks.some((t) => t.id === active.id))
+    setActiveColumnId(col?.id || null)
   }
 
   const handleDragOver = (event: DragOverEvent) => {
@@ -295,98 +307,164 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     const activeId = active.id as string
     const overId = over.id as string
 
-    if (activeId === overId) return
-
-    // Find columns
-    const activeColumn = board.columns.find((col) =>
-      col.tasks.some((task) => task.id === activeId)
-    )
-    const overColumn = board.columns.find(
-      (col) => col.id === overId || col.tasks.some((task) => task.id === overId)
-    )
-
-    if (!activeColumn || !overColumn) return
-
-    // Optimistic update
     setBoard((prevBoard) => {
-      const newBoard = { ...prevBoard }
-      const newColumns = [...newBoard.columns]
+      const activeCol = findColumnOfItem(activeId, prevBoard.columns)
+      const overCol = findColumnOfItem(overId, prevBoard.columns)
 
-      const activeColIndex = newColumns.findIndex(
-        (col) => col.id === activeColumn.id
-      )
-      const overColIndex = newColumns.findIndex(
-        (col) => col.id === overColumn.id
-      )
+      if (!activeCol || !overCol) return prevBoard
 
-      const activeTaskIndex = newColumns[activeColIndex].tasks.findIndex(
-        (task) => task.id === activeId
-      )
-      const activeTask = newColumns[activeColIndex].tasks[activeTaskIndex]
+      // Determine actual column IDs
+      const activeColId = activeCol.tasks.some((t) => t.id === activeId) ? activeCol.id : activeId
+      const overColId = overCol.tasks.some((t) => t.id === overId) ? overCol.id : overId
 
-      // Remove from active column
-      newColumns[activeColIndex] = {
-        ...newColumns[activeColIndex],
-        tasks: newColumns[activeColIndex].tasks.filter(
-          (task) => task.id !== activeId
-        ),
+      // Only handle cross-column moves in onDragOver
+      if (activeColId === overColId) return prevBoard
+
+      const activeColIndex = prevBoard.columns.findIndex((c) => c.id === activeColId)
+      const overColIndex = prevBoard.columns.findIndex((c) => c.id === overColId)
+      if (activeColIndex === -1 || overColIndex === -1) return prevBoard
+
+      const activeTaskIndex = prevBoard.columns[activeColIndex].tasks.findIndex(
+        (t) => t.id === activeId
+      )
+      if (activeTaskIndex === -1) return prevBoard
+
+      const task = prevBoard.columns[activeColIndex].tasks[activeTaskIndex]
+
+      // Determine insert position
+      let newIndex = prevBoard.columns[overColIndex].tasks.length
+      const overTaskIndex = prevBoard.columns[overColIndex].tasks.findIndex((t) => t.id === overId)
+      if (overTaskIndex !== -1) {
+        newIndex = overTaskIndex
       }
 
-      // Add to over column
-      let overTaskIndex = newColumns[overColIndex].tasks.findIndex(
-        (task) => task.id === overId
-      )
+      const newColumns = prevBoard.columns.map((col, idx) => {
+        if (idx === activeColIndex) {
+          return {
+            ...col,
+            tasks: col.tasks
+              .filter((t) => t.id !== activeId)
+              .map((t, i) => ({ ...t, order: i })),
+          }
+        }
+        if (idx === overColIndex) {
+          const updatedTasks = [...col.tasks]
+          updatedTasks.splice(newIndex, 0, { ...task, columnId: col.id })
+          return {
+            ...col,
+            tasks: updatedTasks.map((t, i) => ({ ...t, order: i })),
+          }
+        }
+        return col
+      })
 
-      if (overTaskIndex === -1) {
-        // Dropped on column itself
-        overTaskIndex = newColumns[overColIndex].tasks.length
-      }
-
-      newColumns[overColIndex] = {
-        ...newColumns[overColIndex],
-        tasks: [
-          ...newColumns[overColIndex].tasks.slice(0, overTaskIndex),
-          { ...activeTask, columnId: overColumn.id },
-          ...newColumns[overColIndex].tasks.slice(overTaskIndex),
-        ],
-      }
-
-      // Reorder tasks
-      newColumns[activeColIndex].tasks = newColumns[activeColIndex].tasks.map(
-        (task, idx) => ({ ...task, order: idx })
-      )
-      newColumns[overColIndex].tasks = newColumns[overColIndex].tasks.map(
-        (task, idx) => ({ ...task, order: idx })
-      )
-
-      return { ...newBoard, columns: newColumns }
+      return { ...prevBoard, columns: newColumns }
     })
+
+    // Update visual column highlight
+    const overCol = findColumnOfItem(overId, board.columns)
+    if (overCol) {
+      const colId = overCol.tasks.some((t) => t.id === overId) ? overCol.id : overId as string
+      setActiveColumnId(colId)
+    }
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     setActiveTask(null)
+    setActiveColumnId(null)
 
-    if (!over) return
+    if (!over) {
+      // Dropped outside - revert
+      if (dragStartBoardRef.current) {
+        setBoard(dragStartBoardRef.current)
+      }
+      dragStartBoardRef.current = null
+      return
+    }
 
     const activeId = active.id as string
     const overId = over.id as string
 
-    if (activeId === overId) return
+    // Apply within-column reordering and capture final state for API call.
+    // The updater function runs synchronously and sees the latest state
+    // (including any cross-column moves from handleDragOver).
+    let finalColumnId: string | undefined
+    let finalOrder: number | undefined
 
-    const activeColumn = board.columns.find((col) =>
-      col.tasks.some((task) => task.id === activeId)
-    )
-    const overColumn = board.columns.find(
-      (col) => col.id === overId || col.tasks.some((task) => task.id === overId)
-    )
+    setBoard((prevBoard) => {
+      const activeCol = prevBoard.columns.find((c) => c.tasks.some((t) => t.id === activeId))
+      const overCol = findColumnOfItem(overId, prevBoard.columns)
 
-    if (!activeColumn || !overColumn) return
+      if (!activeCol || !overCol) {
+        // Capture final position from current state
+        if (activeCol) {
+          finalColumnId = activeCol.id
+          finalOrder = activeCol.tasks.findIndex((t) => t.id === activeId)
+          if (finalOrder === -1) finalOrder = 0
+        }
+        return prevBoard
+      }
 
-    let overTaskIndex = overColumn.tasks.findIndex((task) => task.id === overId)
+      const overColId = overCol.tasks.some((t) => t.id === overId) ? overCol.id : overId as string
 
-    if (overTaskIndex === -1) {
-      overTaskIndex = overColumn.tasks.length
+      // Cross-column move was already handled by handleDragOver
+      if (activeCol.id !== overColId) {
+        finalColumnId = activeCol.id
+        finalOrder = activeCol.tasks.findIndex((t) => t.id === activeId)
+        if (finalOrder === -1) finalOrder = 0
+        return prevBoard
+      }
+
+      // Same-column reorder
+      const oldIndex = activeCol.tasks.findIndex((t) => t.id === activeId)
+      const newIndex = activeCol.tasks.findIndex((t) => t.id === overId)
+
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+        finalColumnId = activeCol.id
+        finalOrder = oldIndex !== -1 ? oldIndex : 0
+        return prevBoard
+      }
+
+      const newBoard = {
+        ...prevBoard,
+        columns: prevBoard.columns.map((col) => {
+          if (col.id !== activeCol.id) return col
+          const reordered = arrayMove(col.tasks, oldIndex, newIndex)
+          return {
+            ...col,
+            tasks: reordered.map((t, i) => ({ ...t, order: i })),
+          }
+        }),
+      }
+
+      // Capture final position after reorder
+      const updatedCol = newBoard.columns.find((c) => c.id === activeCol.id)
+      if (updatedCol) {
+        finalColumnId = updatedCol.id
+        finalOrder = updatedCol.tasks.findIndex((t) => t.id === activeId)
+        if (finalOrder === -1) finalOrder = 0
+      }
+
+      return newBoard
+    })
+
+    if (!finalColumnId || finalOrder === undefined) {
+      dragStartBoardRef.current = null
+      return
+    }
+
+    // Check if anything actually changed vs drag start
+    const startBoard = dragStartBoardRef.current
+    if (startBoard) {
+      const startCol = startBoard.columns.find((c) => c.tasks.some((t) => t.id === activeId))
+      if (startCol && startCol.id === finalColumnId) {
+        const startIdx = startCol.tasks.findIndex((t) => t.id === activeId)
+        if (startIdx === finalOrder) {
+          dragStartBoardRef.current = null
+          return
+        }
+      }
     }
 
     // Persist to backend
@@ -394,43 +472,42 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     try {
       const response = await fetch('/api/tasks/reorder', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           taskId: activeId,
-          columnId: overColumn.id,
-          newOrder: overTaskIndex,
+          columnId: finalColumnId,
+          newOrder: finalOrder,
         }),
       })
 
       if (response.ok) {
         const updatedBoard = await response.json()
         setBoard(serializeBoardDates(updatedBoard))
+      } else {
+        if (dragStartBoardRef.current) {
+          setBoard(dragStartBoardRef.current)
+        }
       }
     } catch (error) {
       console.error('Failed to reorder task:', error)
+      if (dragStartBoardRef.current) {
+        setBoard(dragStartBoardRef.current)
+      }
     } finally {
       setReordering(false)
+      dragStartBoardRef.current = null
     }
   }
 
   const handleCreateTask = async (columnId: string, title: string, priority: string) => {
     const response = await fetch('/api/tasks', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        title,
-        columnId,
-        priority,
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, columnId, priority }),
     })
 
     if (response.ok) {
       const result = await response.json()
-      // Handle both single task and array (jira batch) responses
       const newTasks: Task[] = Array.isArray(result) ? result : [result]
       setBoard((prevBoard) => {
         const newColumns = prevBoard.columns.map((col) => {
@@ -442,10 +519,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
               createdAt: String(t.createdAt),
               updatedAt: String(t.updatedAt),
             }))
-            return {
-              ...col,
-              tasks: [...col.tasks, ...serialized],
-            }
+            return { ...col, tasks: [...col.tasks, ...serialized] }
           }
           return col
         })
@@ -456,18 +530,15 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      const response = await fetch(`/api/tasks/${taskId}`, {
-        method: 'DELETE',
-      })
-
+      const response = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
       if (response.ok) {
-        setBoard((prevBoard) => {
-          const newColumns = prevBoard.columns.map((col) => ({
+        setBoard((prevBoard) => ({
+          ...prevBoard,
+          columns: prevBoard.columns.map((col) => ({
             ...col,
             tasks: col.tasks.filter((task) => task.id !== taskId),
-          }))
-          return { ...prevBoard, columns: newColumns }
-        })
+          })),
+        }))
       }
     } catch (error) {
       console.error('Failed to delete task:', error)
@@ -488,59 +559,62 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   return (
     <>
       {/* Header actions */}
-      <div className="flex items-center gap-3 px-6 mb-4">
+      <div className="flex items-center gap-2 px-6 mb-4">
         <button
           onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || ''); setJiraPatInput('') }}
-          className="px-4 py-2 text-sm bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-600 shadow-sm font-medium"
+          className="px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 font-medium inline-flex items-center gap-1.5"
         >
-          ⚙️ Board Settings
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Settings
         </button>
         {hasJiraPat && (
-          <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full font-medium ring-1 ring-emerald-200">✓ JIRA Connected</span>
+          <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200">✓ JIRA</span>
         )}
       </div>
 
       {/* Board settings panel */}
       {showBoardSettings && (
-        <div className="mx-6 mb-4 p-5 bg-white border border-gray-200 rounded-2xl shadow-sm">
-          <h3 className="text-sm font-bold text-gray-800 mb-4">Board Settings</h3>
+        <div className="mx-6 mb-4 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+          <h3 className="text-xs font-bold text-gray-800 mb-3 uppercase tracking-wider">Board Settings</h3>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">JIRA Base URL</label>
+              <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">JIRA Base URL</label>
               <input
                 type="text"
                 value={jiraUrlInput}
                 onChange={(e) => setJiraUrlInput(e.target.value)}
                 placeholder="https://yourorg.atlassian.net/browse/"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">JIRA Personal Access Token (PAT)</label>
+              <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">JIRA PAT</label>
               <input
                 type="password"
                 value={jiraPatInput}
                 onChange={(e) => setJiraPatInput(e.target.value)}
-                placeholder={hasJiraPat ? '••••••••  (already configured)' : 'Enter your JIRA PAT…'}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                placeholder={hasJiraPat ? '••••••••  (configured)' : 'Enter PAT…'}
+                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
               />
-              <p className="mt-1 text-[11px] text-gray-400">Used to fetch issue titles and descriptions when creating #jira tasks</p>
             </div>
 
             <div className="flex gap-2 pt-1">
               <button
                 onClick={handleSaveJiraSettings}
                 disabled={savingJira}
-                className="px-4 py-2 bg-violet-500 text-white rounded-xl hover:bg-violet-600 text-sm transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-2"
+                className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
               >
                 {savingJira && <Spinner size="sm" className="text-white" />}
                 {savingJira ? 'Saving…' : 'Save'}
               </button>
               <button
                 onClick={() => setShowBoardSettings(false)}
-                className="px-4 py-2 bg-white text-gray-500 rounded-xl hover:bg-gray-50 text-sm transition-colors border border-gray-200"
+                className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors"
               >
                 Close
               </button>
@@ -551,9 +625,9 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
       {/* Reorder loading indicator */}
       {reordering && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2 shadow-lg">
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-lg">
           <Spinner size="sm" className="text-violet-500" />
-          <span className="text-sm text-gray-600 font-medium">Saving…</span>
+          <span className="text-xs text-gray-600 font-medium">Saving…</span>
         </div>
       )}
 
@@ -564,7 +638,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-4 overflow-x-auto pb-4 px-6 items-start">
+        <div className="flex gap-3 overflow-x-auto pb-4 px-6 items-start">
           {board.columns.map((column) => (
             <KanbanColumn
               key={column.id}
@@ -574,53 +648,54 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
               onEditTask={openTaskModal}
               onUpdateColumn={handleUpdateColumn}
               onDeleteColumn={handleDeleteColumn}
+              isOver={activeColumnId === column.id}
             />
           ))}
 
-          {/* Add column button / form */}
-          <div className="shrink-0 w-80">
+          {/* Add column */}
+          <div className="shrink-0 w-72">
             {showAddColumn ? (
-              <form onSubmit={handleAddColumn} className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm relative">
+              <form onSubmit={handleAddColumn} className="bg-white rounded-xl p-3 border border-gray-200 shadow-sm relative">
                 {addingColumn && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-2xl">
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-xl">
                     <Spinner size="md" className="text-violet-500" />
                   </div>
                 )}
-                <h4 className="text-sm font-bold text-gray-800 mb-3">New Column</h4>
+                <h4 className="text-xs font-bold text-gray-800 mb-2 uppercase tracking-wider">New Column</h4>
                 <input
                   type="text"
                   value={newColTitle}
                   onChange={(e) => setNewColTitle(e.target.value)}
                   placeholder="Column title…"
                   disabled={addingColumn}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-2"
                   autoFocus
                 />
-                <div className="flex items-center gap-4 mb-3 text-xs text-gray-600">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
+                <div className="flex items-center gap-3 mb-2 text-[10px] text-gray-600">
+                  <label className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={newColIsStart}
                       onChange={(e) => setNewColIsStart(e.target.checked)}
                       className="rounded border-gray-300 text-violet-500 focus:ring-violet-400"
                     />
-                    🟢 Start
+                    Start
                   </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
+                  <label className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={newColIsEnd}
                       onChange={(e) => setNewColIsEnd(e.target.checked)}
                       className="rounded border-gray-300 text-violet-500 focus:ring-violet-400"
                     />
-                    🔴 End
+                    End
                   </label>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-1.5">
                   <button
                     type="submit"
                     disabled={addingColumn}
-                    className="px-3 py-1.5 bg-violet-500 text-white rounded-xl hover:bg-violet-600 text-sm transition-colors font-medium disabled:opacity-50"
+                    className="px-2.5 py-1 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors font-medium disabled:opacity-50"
                   >
                     Create
                   </button>
@@ -628,7 +703,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
                     type="button"
                     disabled={addingColumn}
                     onClick={() => { setShowAddColumn(false); setNewColTitle(''); setNewColIsStart(false); setNewColIsEnd(false) }}
-                    className="px-3 py-1.5 bg-white text-gray-600 rounded-xl hover:bg-gray-50 text-sm transition-colors border border-gray-200"
+                    className="px-2.5 py-1 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors"
                   >
                     Cancel
                   </button>
@@ -637,49 +712,49 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
             ) : (
               <button
                 onClick={() => setShowAddColumn(true)}
-                className="w-full py-3 bg-white border border-dashed border-gray-300 rounded-2xl text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 transition-colors text-sm font-medium"
+                className="w-full py-2.5 bg-white/50 border border-dashed border-gray-300 rounded-xl text-gray-400 hover:bg-white hover:text-gray-600 hover:border-gray-400 transition-all text-xs font-medium"
               >
                 + Add Column
               </button>
             )}
           </div>
         </div>
-        <DragOverlay>
-          {activeTask ? <TaskCard task={activeTask} isDragging /> : null}
+        <DragOverlay dropAnimation={null}>
+          {activeTask ? <TaskCard task={activeTask} isDragging isOverlay /> : null}
         </DragOverlay>
       </DndContext>
 
       {/* Task Detail Modal */}
       {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" role="dialog" aria-modal="true" aria-labelledby="task-modal-title" onClick={closeTaskModal}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="task-modal-title" onClick={closeTaskModal}>
           <div
-            className="bg-white border border-gray-200 rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6"
+            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-md mx-4 p-5"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="task-modal-title" className="text-lg font-bold text-gray-900 mb-5">Edit Task</h2>
+            <h2 id="task-modal-title" className="text-sm font-bold text-gray-900 mb-4">Edit Task</h2>
 
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Title</label>
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
             <input
               type="text"
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-4"
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
             />
 
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Description</label>
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Description</label>
             <textarea
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
-              rows={5}
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-4 resize-y font-mono"
+              rows={4}
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
               placeholder="Add a description…"
             />
 
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Priority</label>
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
             <select
               value={editPriority}
               onChange={(e) => setEditPriority(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-4"
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
             >
               <option value="critical">🔴 Critical</option>
               <option value="high">🟠 High</option>
@@ -689,34 +764,34 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
             </select>
 
             {(selectedTask.startDate || selectedTask.endDate) && (
-              <div className="flex gap-4 mb-4 text-xs text-gray-500">
+              <div className="flex gap-3 mb-3 text-[10px] text-gray-500">
                 {selectedTask.startDate && (
-                  <div className="bg-gray-50 px-3 py-1.5 rounded-lg">
+                  <div className="bg-gray-50 px-2 py-1 rounded-md">
                     <span className="font-semibold">Start:</span> {formatDateDisplay(selectedTask.startDate)}
                   </div>
                 )}
                 {selectedTask.endDate && (
-                  <div className="bg-gray-50 px-3 py-1.5 rounded-lg">
+                  <div className="bg-gray-50 px-2 py-1 rounded-md">
                     <span className="font-semibold">End:</span> {formatDateDisplay(selectedTask.endDate)}
                   </div>
                 )}
               </div>
             )}
 
-            <div className="flex justify-end gap-2 mt-2">
+            <div className="flex justify-end gap-2 mt-1">
               <button
                 onClick={closeTaskModal}
-                className="px-4 py-2 bg-white text-gray-600 rounded-xl hover:bg-gray-50 text-sm transition-colors border border-gray-200 font-medium"
+                className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors font-medium"
               >
-                Close
+                Cancel
               </button>
               <button
                 onClick={handleSaveTask}
                 disabled={savingTask}
-                className="px-4 py-2 bg-violet-500 text-white rounded-xl hover:bg-violet-600 text-sm transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-2"
+                className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
               >
                 {savingTask && <Spinner size="sm" className="text-white" />}
-                {savingTask ? 'Saving…' : 'Save'}
+                {savingTask ? 'Saving…' : 'Save Changes'}
               </button>
             </div>
           </div>
