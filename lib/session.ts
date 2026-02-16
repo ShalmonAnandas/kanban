@@ -1,5 +1,4 @@
 import { cookies } from 'next/headers'
-import { randomBytes } from 'crypto'
 import prisma from './prisma'
 
 const USER_COOKIE_NAME = 'kanban_user_id'

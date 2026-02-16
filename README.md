@@ -97,6 +97,8 @@ npm run db:push
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/ShalmonAnandas/kanban)
 
+> Note: Make sure to add a Vercel Postgres database after deployment from the Storage tab.
+
 ### Manual Deployment
 
 1. Push your code to GitHub

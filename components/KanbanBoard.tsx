@@ -14,10 +14,7 @@ import {
   DragOverEvent,
 } from '@dnd-kit/core'
 import {
-  arrayMove,
-  SortableContext,
   sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { KanbanColumn } from './KanbanColumn'
 import { TaskCard } from './TaskCard'
@@ -177,9 +174,6 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
     if (!activeColumn || !overColumn) return
 
-    const activeTaskIndex = activeColumn.tasks.findIndex(
-      (task) => task.id === activeId
-    )
     let overTaskIndex = overColumn.tasks.findIndex((task) => task.id === overId)
 
     if (overTaskIndex === -1) {

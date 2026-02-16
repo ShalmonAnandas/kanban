@@ -1,4 +1,3 @@
-import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { getUserId } from '@/lib/session'
 import { KanbanBoard, Board } from '@/components/KanbanBoard'
