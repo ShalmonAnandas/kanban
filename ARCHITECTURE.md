@@ -147,6 +147,9 @@ export async function getUserId(): Promise<string> {
 }
 ```
 
+Note: in development `secure` is false, so cookies are sent over HTTP; use HTTPS when testing
+authentication-sensitive flows locally.
+
 ### 5. Database Schema Design
 
 The schema uses cascading deletes for data integrity:

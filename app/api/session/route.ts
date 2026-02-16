@@ -7,7 +7,6 @@ export async function GET(request: Request) {
     await getUserId()
     const url = new URL(request.url)
     const redirectTo = url.searchParams.get('redirect_to')
-    let targetUrl = new URL('/', url)
 
     if (redirectTo) {
       const isRelativePath =
@@ -22,10 +21,9 @@ export async function GET(request: Request) {
           { status: 400 }
         )
       }
-
-      targetUrl = new URL(redirectTo, url)
     }
 
+    const targetUrl = redirectTo ? new URL(redirectTo, url) : new URL('/', url)
     return NextResponse.redirect(targetUrl)
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
