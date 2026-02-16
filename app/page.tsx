@@ -60,13 +60,10 @@ export default async function Home() {
     updatedAt: boardData.updatedAt.toISOString(),
     columns: boardData.columns.map(col => ({
       ...col,
-      isStart: col.isStart,
-      isEnd: col.isEnd,
       createdAt: col.createdAt.toISOString(),
       updatedAt: col.updatedAt.toISOString(),
       tasks: col.tasks.map(task => ({
         ...task,
-        priority: task.priority,
         startDate: task.startDate ? task.startDate.toISOString() : null,
         endDate: task.endDate ? task.endDate.toISOString() : null,
         createdAt: task.createdAt.toISOString(),
