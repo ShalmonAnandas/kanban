@@ -3,11 +3,13 @@ import { getUserIdFromCookie } from '@/lib/session'
 import { KanbanBoard, Board } from '@/components/KanbanBoard'
 import { redirect } from 'next/navigation'
 
+const SESSION_INIT_PATH = '/api/session'
+
 export default async function Home() {
   const userId = await getUserIdFromCookie()
 
   if (!userId) {
-    redirect('/api/session')
+    redirect(SESSION_INIT_PATH)
   }
   
   // Get or create a default board for the user
