@@ -125,10 +125,12 @@ and redirect to `/api/session` to initialize it when missing; route handlers cre
 
 ```typescript
 export async function getUserIdFromCookie(): Promise<string | null> {
+  const cookieStore = await cookies()
   return cookieStore.get(USER_COOKIE_NAME)?.value ?? null
 }
 
 export async function getUserId(): Promise<string> {
+  const cookieStore = await cookies()
   let userId = cookieStore.get(USER_COOKIE_NAME)?.value
   
   if (!userId) {
