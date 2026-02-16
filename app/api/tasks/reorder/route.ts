@@ -7,6 +7,8 @@ export async function POST(request: Request) {
     const userId = await getUserId()
     const { taskId, columnId, newOrder } = await request.json()
     
+    console.log('[Reorder API] Received request:', { taskId, columnId, newOrder, userId })
+    
     if (!taskId || !columnId || newOrder === undefined) {
       return NextResponse.json(
         { error: 'taskId, columnId, and newOrder are required' },
@@ -52,6 +54,8 @@ export async function POST(request: Request) {
     
     const oldColumnId = task.columnId
     const oldOrder = task.order
+    
+    console.log('[Reorder API] Current state:', { oldColumnId, oldOrder, newColumnId: columnId, newOrder })
     
     // Use a transaction to ensure consistency
     await prisma.$transaction(async (tx) => {
@@ -144,6 +148,8 @@ export async function POST(request: Request) {
           ...dateUpdates,
         },
       })
+      
+      console.log('[Reorder API] Task updated successfully')
     })
     
     // Fetch the updated board state
@@ -167,9 +173,10 @@ export async function POST(request: Request) {
       },
     })
     
+    console.log('[Reorder API] Returning updated board')
     return NextResponse.json(board)
   } catch (error) {
-    console.error('Error reordering task:', error)
+    console.error('[Reorder API] Error reordering task:', error)
     return NextResponse.json(
       { error: 'Failed to reorder task' },
       { status: 500 }

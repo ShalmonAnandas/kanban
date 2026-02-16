@@ -21,6 +21,7 @@ import {
 import { KanbanColumn } from './KanbanColumn'
 import { TaskCard } from './TaskCard'
 import { Spinner } from './Spinner'
+import { fetchJiraIssueClientSide } from '@/lib/jira-client'
 
 export type Task = {
   id: string
@@ -397,25 +398,28 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     const activeId = active.id as string
     const overId = over.id as string
 
-    // Apply within-column reordering and capture final state for API call.
-    // The updater function runs synchronously and sees the latest state
-    // (including any cross-column moves from handleDragOver).
+    // Capture final position and apply within-column reordering
     let finalPosition: { columnId: string; order: number } | undefined
+    let shouldPersist = false
 
     setBoard((prevBoard) => {
       const activeColId = resolveColumnId(activeId, prevBoard.columns)
       const overColId = resolveColumnId(overId, prevBoard.columns)
 
-      if (!activeColId || !overColId || activeColId !== overColId) {
+      if (!activeColId || !overColId) {
+        return prevBoard
+      }
+
+      if (activeColId !== overColId) {
         // Cross-column move was already handled by handleDragOver, just capture position
         finalPosition = getTaskPosition(activeId, prevBoard.columns)
+        shouldPersist = true
         return prevBoard
       }
 
       // Same-column reorder
       const col = prevBoard.columns.find((c) => c.id === activeColId)
       if (!col) {
-        finalPosition = getTaskPosition(activeId, prevBoard.columns)
         return prevBoard
       }
 
@@ -423,7 +427,6 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       const newIndex = col.tasks.findIndex((t) => t.id === overId)
 
       if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
-        finalPosition = getTaskPosition(activeId, prevBoard.columns)
         return prevBoard
       }
 
@@ -437,10 +440,11 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       }
 
       finalPosition = getTaskPosition(activeId, newBoard.columns)
+      shouldPersist = true
       return newBoard
     })
 
-    if (!finalPosition) {
+    if (!finalPosition || !shouldPersist) {
       dragStartBoardRef.current = null
       return
     }
@@ -458,6 +462,12 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     // Persist to backend
     setReordering(true)
     try {
+      console.log('[DragEnd] Persisting to backend:', {
+        taskId: activeId,
+        columnId: finalPosition.columnId,
+        newOrder: finalPosition.order,
+      })
+
       const response = await fetch('/api/tasks/reorder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -470,14 +480,17 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
       if (response.ok) {
         const updatedBoard = await response.json()
+        console.log('[DragEnd] Successfully persisted to backend')
         setBoard(serializeBoardDates(updatedBoard))
       } else {
+        const errorData = await response.text()
+        console.error('[DragEnd] Backend returned error:', response.status, errorData)
         if (dragStartBoardRef.current) {
           setBoard(dragStartBoardRef.current)
         }
       }
     } catch (error) {
-      console.error('Failed to reorder task:', error)
+      console.error('[DragEnd] Failed to reorder task:', error)
       if (dragStartBoardRef.current) {
         setBoard(dragStartBoardRef.current)
       }
@@ -488,6 +501,106 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   }
 
   const handleCreateTask = async (columnId: string, title: string, priority: string) => {
+    // Handle #jira prefix for bulk ticket creation (client-side)
+    if (title.startsWith('#jira ')) {
+      const jiraBaseUrl = board.jiraBaseUrl
+      if (!jiraBaseUrl) {
+        console.error('Board does not have a JIRA Base URL configured')
+        return
+      }
+
+      const numbers = title.slice(6).split(',').map((n: string) => n.trim()).filter(Boolean)
+      if (numbers.length === 0) {
+        console.error('No ticket numbers provided after #jira prefix')
+        return
+      }
+
+      // Validate ticket numbers
+      const validTicket = /^[a-zA-Z0-9-]+$/
+      const invalidTickets = numbers.filter(num => !validTicket.test(num))
+      if (invalidTickets.length > 0) {
+        console.error('Invalid ticket numbers:', invalidTickets.join(', '))
+        return
+      }
+
+      // Ensure jiraBaseUrl ends with a separator
+      const baseUrl = jiraBaseUrl.endsWith('/') || jiraBaseUrl.endsWith('-') ? jiraBaseUrl : jiraBaseUrl + '/'
+      const jiraPat = board.jiraPat
+
+      // Fetch JIRA issues client-side (in parallel)
+      const issuePromises = numbers.map(async (num) => {
+        let taskTitle = `[TICKET-${num}](${baseUrl}${num})`
+        let taskDescription = null
+
+        // If PAT is configured, fetch issue details from JIRA client-side
+        if (jiraPat) {
+          const issueData = await fetchJiraIssueClientSide(jiraBaseUrl, jiraPat, num)
+          if (issueData) {
+            taskTitle = `[${issueData.summary}](${baseUrl}${num})`
+            taskDescription = issueData.description
+          }
+        }
+
+        return { title: taskTitle, description: taskDescription, ticketNum: num }
+      })
+
+      const issueDetails = await Promise.all(issuePromises)
+
+      // Create tasks via API (in parallel)
+      const taskPromises = issueDetails.map(details =>
+        fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: details.title,
+            description: details.description,
+            columnId,
+            priority: priority || 'medium',
+          }),
+        }).then(async (response) => {
+          if (response.ok) {
+            return { success: true, task: await response.json(), ticketNum: details.ticketNum }
+          } else {
+            console.error(`Failed to create task for ticket ${details.ticketNum}:`, response.status)
+            return { success: false, ticketNum: details.ticketNum }
+          }
+        }).catch((error) => {
+          console.error(`Error creating task for ticket ${details.ticketNum}:`, error)
+          return { success: false, ticketNum: details.ticketNum }
+        })
+      )
+
+      const results = await Promise.all(taskPromises)
+      const createdTasks = results.filter((r): r is { success: true; task: Task; ticketNum: string } => r.success).map(r => r.task)
+      const failedTickets = results.filter(r => !r.success).map(r => r.ticketNum)
+
+      if (failedTickets.length > 0) {
+        console.error('Failed to create tasks for tickets:', failedTickets.join(', '))
+      }
+
+      // Update board state with new tasks
+      if (createdTasks.length > 0) {
+        setBoard((prevBoard) => {
+          const newColumns = prevBoard.columns.map((col) => {
+            if (col.id === columnId) {
+              const serialized = createdTasks.map((t: Task) => ({
+                ...t,
+                startDate: t.startDate ? String(t.startDate) : null,
+                endDate: t.endDate ? String(t.endDate) : null,
+                createdAt: String(t.createdAt),
+                updatedAt: String(t.updatedAt),
+              }))
+              return { ...col, tasks: [...col.tasks, ...serialized] }
+            }
+            return col
+          })
+          return { ...prevBoard, columns: newColumns }
+        })
+      }
+      return
+    }
+
+    // Regular task creation
     const response = await fetch('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -513,6 +626,8 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         })
         return { ...prevBoard, columns: newColumns }
       })
+    } else {
+      console.error('Failed to create task:', response.status)
     }
   }
 
