@@ -398,25 +398,28 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     const activeId = active.id as string
     const overId = over.id as string
 
-    // Apply within-column reordering and capture final state for API call.
-    // The updater function runs synchronously and sees the latest state
-    // (including any cross-column moves from handleDragOver).
+    // Capture final position and apply within-column reordering
     let finalPosition: { columnId: string; order: number } | undefined
+    let shouldPersist = false
 
     setBoard((prevBoard) => {
       const activeColId = resolveColumnId(activeId, prevBoard.columns)
       const overColId = resolveColumnId(overId, prevBoard.columns)
 
-      if (!activeColId || !overColId || activeColId !== overColId) {
+      if (!activeColId || !overColId) {
+        return prevBoard
+      }
+
+      if (activeColId !== overColId) {
         // Cross-column move was already handled by handleDragOver, just capture position
         finalPosition = getTaskPosition(activeId, prevBoard.columns)
+        shouldPersist = true
         return prevBoard
       }
 
       // Same-column reorder
       const col = prevBoard.columns.find((c) => c.id === activeColId)
       if (!col) {
-        finalPosition = getTaskPosition(activeId, prevBoard.columns)
         return prevBoard
       }
 
@@ -424,7 +427,6 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       const newIndex = col.tasks.findIndex((t) => t.id === overId)
 
       if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
-        finalPosition = getTaskPosition(activeId, prevBoard.columns)
         return prevBoard
       }
 
@@ -438,10 +440,11 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       }
 
       finalPosition = getTaskPosition(activeId, newBoard.columns)
+      shouldPersist = true
       return newBoard
     })
 
-    if (!finalPosition) {
+    if (!finalPosition || !shouldPersist) {
       dragStartBoardRef.current = null
       return
     }
