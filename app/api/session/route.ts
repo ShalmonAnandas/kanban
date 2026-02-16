@@ -7,14 +7,15 @@ export async function GET(request: Request) {
     await getUserId()
     const url = new URL(request.url)
     const redirectTo = url.searchParams.get('redirect_to')
-    let redirectUrlTarget = new URL('/', url)
+    let targetUrl = new URL('/', url)
 
     if (redirectTo) {
-      let redirectUrl: URL
+      const isRelativePath =
+        redirectTo.startsWith('/') &&
+        !redirectTo.startsWith('//') &&
+        !redirectTo.includes('\\')
 
-      try {
-        redirectUrl = new URL(redirectTo, url)
-      } catch {
+      if (!isRelativePath) {
         console.warn('Invalid redirect_to parameter received:', redirectTo)
         return NextResponse.json(
           { error: 'Invalid redirect_to parameter' },
@@ -22,18 +23,10 @@ export async function GET(request: Request) {
         )
       }
 
-      const isSafeRedirect =
-        redirectUrl.origin === url.origin &&
-        redirectTo.startsWith('/') &&
-        !redirectTo.startsWith('//') &&
-        !redirectTo.includes('\\')
-
-      if (isSafeRedirect) {
-        redirectUrlTarget = redirectUrl
-      }
+      targetUrl = new URL(redirectTo, url)
     }
 
-    return NextResponse.redirect(redirectUrlTarget)
+    return NextResponse.redirect(targetUrl)
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error('Error initializing session:', errorMessage)
