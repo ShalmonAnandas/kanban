@@ -1,7 +1,3 @@
 {
-  "buildCommand": "npx prisma generate && npm run build",
-  "env": {
-    "DATABASE_URL": "@postgres_prisma_url",
-    "POSTGRES_URL_NON_POOLING": "@postgres_url_non_pooling"
-  }
+  "buildCommand": "npx prisma generate && npx prisma migrate deploy && npm run build"
 }
