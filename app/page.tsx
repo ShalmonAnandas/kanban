@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma'
 import { getUserIdFromCookie, SESSION_INIT_PATH } from '@/lib/session'
+import { MASKED_PAT } from '@/lib/constants'
 import { KanbanBoard, Board } from '@/components/KanbanBoard'
 import { redirect } from 'next/navigation'
 
@@ -56,6 +57,7 @@ export default async function Home() {
   const board: Board = {
     ...boardData,
     jiraBaseUrl: boardData.jiraBaseUrl || null,
+    jiraPat: boardData.jiraPat ? MASKED_PAT : null,
     createdAt: boardData.createdAt.toISOString(),
     updatedAt: boardData.updatedAt.toISOString(),
     columns: boardData.columns.map(col => ({
@@ -74,12 +76,17 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen">
-      <header className="backdrop-blur-lg bg-white/40 border-b border-white/30 shadow-sm">
-        <div className="max-w-full mx-auto px-6 py-4">
-          <h1 className="text-2xl font-bold text-gray-800 tracking-tight">{board.title}</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Drag and drop tasks to organize your work
-          </p>
+      <header className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-full mx-auto px-6 py-4 flex items-center gap-3">
+          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-violet-500 text-white font-bold text-lg shadow-sm">
+            K
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 tracking-tight">{board.title}</h1>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Drag and drop tasks to organize your work
+            </p>
+          </div>
         </div>
       </header>
       <main className="max-w-full mx-auto py-6">

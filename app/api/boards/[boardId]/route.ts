@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getUserId } from '@/lib/session'
+import { MASKED_PAT } from '@/lib/constants'
 
 type Params = Promise<{ boardId: string }>
 
@@ -36,7 +37,11 @@ export async function GET(
       )
     }
     
-    return NextResponse.json(board)
+    // Mask the PAT before returning to client
+    return NextResponse.json({
+      ...board,
+      jiraPat: board.jiraPat ? MASKED_PAT : null,
+    })
   } catch (error) {
     console.error('Error fetching board:', error)
     return NextResponse.json(
@@ -110,6 +115,7 @@ export async function PATCH(
       data: {
         ...(body.title !== undefined && { title: body.title }),
         ...(body.jiraBaseUrl !== undefined && { jiraBaseUrl: body.jiraBaseUrl }),
+        ...(body.jiraPat !== undefined && { jiraPat: body.jiraPat }),
       },
       include: {
         columns: {
@@ -122,8 +128,12 @@ export async function PATCH(
         },
       },
     })
-    
-    return NextResponse.json(updatedBoard)
+
+    // Mask the PAT before returning to client - only indicate presence
+    return NextResponse.json({
+      ...updatedBoard,
+      jiraPat: updatedBoard.jiraPat ? MASKED_PAT : null,
+    })
   } catch (error) {
     console.error('Error updating board:', error)
     return NextResponse.json(

@@ -2,6 +2,37 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getUserId } from '@/lib/session'
 
+// Fetch issue details from JIRA using PAT (Bearer token auth)
+async function fetchJiraIssue(baseUrl: string, pat: string, issueKey: string): Promise<{ summary: string; description: string | null } | null> {
+  try {
+    // Derive API base URL from the browse URL (e.g. https://org.atlassian.net/browse/ -> https://org.atlassian.net)
+    const url = new URL(baseUrl)
+    const apiBase = url.origin
+    const apiUrl = `${apiBase}/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=summary,description`
+
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Accept': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      console.error(`JIRA API returned ${response.status} for issue ${issueKey}`)
+      return null
+    }
+
+    const data = await response.json()
+    return {
+      summary: data.fields?.summary || issueKey,
+      description: data.fields?.description || null,
+    }
+  } catch (error) {
+    console.error(`Failed to fetch JIRA issue ${issueKey}:`, error)
+    return null
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const userId = await getUserId()
@@ -66,6 +97,8 @@ export async function POST(request: Request) {
       // Ensure jiraBaseUrl ends with a separator for clean concatenation
       const baseUrl = jiraBaseUrl.endsWith('/') || jiraBaseUrl.endsWith('-') ? jiraBaseUrl : jiraBaseUrl + '/'
 
+      const jiraPat = column.board.jiraPat
+
       const lastTask = await prisma.task.findFirst({
         where: { columnId },
         orderBy: { order: 'desc' },
@@ -74,11 +107,24 @@ export async function POST(request: Request) {
 
       const tasks = []
       for (const num of numbers) {
-        const taskTitle = `[TICKET-${num}](${baseUrl}${num})`
+        let taskTitle = `[TICKET-${num}](${baseUrl}${num})`
+        let taskDescription = description || null
+
+        // If PAT is configured, fetch issue details from JIRA
+        if (jiraPat) {
+          const issueData = await fetchJiraIssue(jiraBaseUrl, jiraPat, num)
+          if (issueData) {
+            taskTitle = `[${issueData.summary}](${baseUrl}${num})`
+            if (!taskDescription && issueData.description) {
+              taskDescription = issueData.description
+            }
+          }
+        }
+
         const task = await prisma.task.create({
           data: {
             title: taskTitle,
-            description: description || null,
+            description: taskDescription,
             columnId,
             priority: priority || 'medium',
             order: nextOrder++,

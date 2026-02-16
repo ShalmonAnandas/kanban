@@ -7,11 +7,12 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { TaskCard } from './TaskCard'
+import { Spinner } from './Spinner'
 import { Column, Task } from './KanbanBoard'
 
 type KanbanColumnProps = {
   column: Column
-  onCreateTask: (columnId: string, title: string, priority: string) => void
+  onCreateTask: (columnId: string, title: string, priority: string) => Promise<void>
   onDeleteTask: (taskId: string) => void
   onEditTask: (task: Task) => void
   onUpdateColumn: (columnId: string, data: Partial<Column>) => void
@@ -29,6 +30,7 @@ export function KanbanColumn({
   const [isAddingTask, setIsAddingTask] = useState(false)
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [newTaskPriority, setNewTaskPriority] = useState('medium')
+  const [creatingTask, setCreatingTask] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(column.title)
@@ -51,13 +53,18 @@ export function KanbanColumn({
     return () => document.removeEventListener('mousedown', handleClick)
   }, [showMenu])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (newTaskTitle.trim()) {
-      onCreateTask(column.id, newTaskTitle.trim(), newTaskPriority)
-      setNewTaskTitle('')
-      setNewTaskPriority('medium')
-      setIsAddingTask(false)
+      setCreatingTask(true)
+      try {
+        await onCreateTask(column.id, newTaskTitle.trim(), newTaskPriority)
+        setNewTaskTitle('')
+        setNewTaskPriority('medium')
+        setIsAddingTask(false)
+      } finally {
+        setCreatingTask(false)
+      }
     }
   }
 
@@ -90,7 +97,7 @@ export function KanbanColumn({
   }
 
   return (
-    <div className="flex flex-col w-80 backdrop-blur-md bg-white/30 rounded-2xl p-4 shrink-0 border border-white/30 shadow-lg">
+    <div className="flex flex-col w-80 bg-gray-50 rounded-2xl p-4 shrink-0 border border-gray-200 shadow-sm">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 min-w-0">
           {isRenaming ? (
@@ -100,29 +107,29 @@ export function KanbanColumn({
               onChange={(e) => setRenameValue(e.target.value)}
               onBlur={handleRename}
               onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') { setRenameValue(column.title); setIsRenaming(false) } }}
-              className="text-sm font-semibold text-gray-800 bg-white/60 border border-white/50 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-300 w-full"
+              className="text-sm font-semibold text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-violet-400 w-full"
               autoFocus
             />
           ) : (
-            <h3 className="font-semibold text-gray-800 text-sm truncate">
+            <h3 className="font-semibold text-gray-700 text-sm truncate">
               {column.title}
             </h3>
           )}
           {column.isStart && (
-            <span className="text-xs bg-green-200/70 text-green-800 px-1.5 py-0.5 rounded-full whitespace-nowrap" title="Start column" aria-label="Start column">🟢 Start</span>
+            <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full whitespace-nowrap ring-1 ring-emerald-200" title="Start column" aria-label="Start column">Start</span>
           )}
           {column.isEnd && (
-            <span className="text-xs bg-red-200/70 text-red-800 px-1.5 py-0.5 rounded-full whitespace-nowrap" title="End column" aria-label="End column">🔴 End</span>
+            <span className="text-[10px] font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full whitespace-nowrap ring-1 ring-red-200" title="End column" aria-label="End column">End</span>
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className="text-xs text-gray-500 bg-white/40 px-1.5 py-0.5 rounded-full">
+          <span className="text-xs font-semibold text-gray-400 bg-white px-2 py-0.5 rounded-full border border-gray-200">
             {column.tasks.length}
           </span>
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setShowMenu((v) => !v)}
-              className="text-gray-400 hover:text-gray-600 transition-colors p-0.5 rounded-lg hover:bg-white/40"
+              className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-white"
               aria-label="Column settings"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -132,29 +139,29 @@ export function KanbanColumn({
               </svg>
             </button>
             {showMenu && (
-              <div className="absolute right-0 top-7 z-50 w-44 bg-white/90 backdrop-blur-lg rounded-xl shadow-xl border border-white/40 py-1 text-sm">
+              <div className="absolute right-0 top-8 z-50 w-44 bg-white rounded-xl shadow-lg border border-gray-200 py-1 text-sm">
                 <button
                   onClick={() => { setIsRenaming(true); setShowMenu(false); setRenameValue(column.title) }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-purple-50/60 text-gray-700"
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 text-gray-700 transition-colors"
                 >
                   ✏️ Rename
                 </button>
                 <button
                   onClick={handleToggleStart}
-                  className="w-full text-left px-3 py-1.5 hover:bg-green-50/60 text-gray-700"
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 text-gray-700 transition-colors"
                 >
                   {column.isStart ? '🟢 Unset Start' : '🟢 Set as Start'}
                 </button>
                 <button
                   onClick={handleToggleEnd}
-                  className="w-full text-left px-3 py-1.5 hover:bg-red-50/60 text-gray-700"
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 text-gray-700 transition-colors"
                 >
                   {column.isEnd ? '🔴 Unset End' : '🔴 Set as End'}
                 </button>
-                <hr className="my-1 border-gray-200/60" />
+                <hr className="my-1 border-gray-100" />
                 <button
                   onClick={handleDelete}
-                  className={`w-full text-left px-3 py-1.5 ${confirmDelete ? 'bg-red-100 text-red-700 font-semibold' : 'hover:bg-red-50/60 text-red-600'}`}
+                  className={`w-full text-left px-3 py-2 transition-colors ${confirmDelete ? 'bg-red-50 text-red-700 font-semibold' : 'hover:bg-red-50 text-red-600'}`}
                   aria-label={confirmDelete ? 'Press again to confirm deletion' : 'Delete column'}
                 >
                   {confirmDelete ? '⚠️ Confirm Delete?' : '🗑️ Delete Column'}
@@ -185,16 +192,22 @@ export function KanbanColumn({
       </SortableContext>
 
       {isAddingTask ? (
-        <form onSubmit={handleSubmit} className="mt-3">
+        <form onSubmit={handleSubmit} className="mt-3 relative">
+          {creatingTask && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-50/80 rounded-xl">
+              <Spinner size="sm" className="text-violet-500" />
+            </div>
+          )}
           <input
             type="text"
             value={newTaskTitle}
             onChange={(e) => setNewTaskTitle(e.target.value)}
             placeholder="Enter task title..."
-            className="w-full px-3 py-2 bg-white/60 border border-white/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-300 text-gray-800 text-sm backdrop-blur-sm"
+            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent text-gray-800 text-sm"
             autoFocus
+            disabled={creatingTask}
             onBlur={() => {
-              if (!newTaskTitle.trim()) {
+              if (!newTaskTitle.trim() && !creatingTask) {
                 setIsAddingTask(false)
               }
             }}
@@ -202,7 +215,8 @@ export function KanbanColumn({
           <select
             value={newTaskPriority}
             onChange={(e) => setNewTaskPriority(e.target.value)}
-            className="w-full mt-2 px-3 py-1.5 bg-white/60 border border-white/50 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-300"
+            disabled={creatingTask}
+            className="w-full mt-2 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400"
           >
             <option value="critical">🔴 Critical</option>
             <option value="high">🟠 High</option>
@@ -213,18 +227,20 @@ export function KanbanColumn({
           <div className="flex gap-2 mt-2">
             <button
               type="submit"
-              className="px-3 py-1.5 bg-purple-400/70 text-white rounded-xl hover:bg-purple-500/70 text-sm backdrop-blur-sm transition-colors"
+              disabled={creatingTask}
+              className="px-3 py-1.5 bg-violet-500 text-white rounded-xl hover:bg-violet-600 text-sm transition-colors disabled:opacity-50 font-medium"
             >
-              Add
+              {creatingTask ? 'Adding…' : 'Add'}
             </button>
             <button
               type="button"
+              disabled={creatingTask}
               onClick={() => {
                 setIsAddingTask(false)
                 setNewTaskTitle('')
                 setNewTaskPriority('medium')
               }}
-              className="px-3 py-1.5 bg-white/50 text-gray-600 rounded-xl hover:bg-white/70 text-sm backdrop-blur-sm transition-colors"
+              className="px-3 py-1.5 bg-white text-gray-600 rounded-xl hover:bg-gray-100 text-sm transition-colors border border-gray-200"
             >
               Cancel
             </button>
@@ -233,7 +249,7 @@ export function KanbanColumn({
       ) : (
         <button
           onClick={() => setIsAddingTask(true)}
-          className="mt-3 w-full px-3 py-2 text-left text-gray-500 hover:bg-white/40 rounded-xl transition-colors text-sm"
+          className="mt-3 w-full px-3 py-2 text-left text-gray-400 hover:bg-white hover:text-gray-600 rounded-xl transition-colors text-sm font-medium border border-dashed border-gray-200 hover:border-gray-300"
         >
           + Add task
         </button>
