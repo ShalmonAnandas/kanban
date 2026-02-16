@@ -3,6 +3,7 @@ import prisma from './prisma'
 
 export const USER_COOKIE_NAME = 'kanban_user_id'
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
+export const SESSION_INIT_PATH = '/api/session'
 
 export async function getUserIdFromCookie(): Promise<string | null> {
   const cookieStore = await cookies()

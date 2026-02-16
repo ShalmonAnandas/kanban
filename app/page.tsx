@@ -1,15 +1,13 @@
 import prisma from '@/lib/prisma'
-import { getUserIdFromCookie } from '@/lib/session'
+import { getUserIdFromCookie, SESSION_INIT_PATH } from '@/lib/session'
 import { KanbanBoard, Board } from '@/components/KanbanBoard'
 import { redirect } from 'next/navigation'
-
-const SESSION_INIT_PATH = '/api/session'
 
 export default async function Home() {
   const userId = await getUserIdFromCookie()
 
   if (!userId) {
-    redirect(SESSION_INIT_PATH)
+    redirect(`${SESSION_INIT_PATH}?redirect_to=/`)
   }
   
   // Get or create a default board for the user
