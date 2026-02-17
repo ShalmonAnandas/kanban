@@ -738,7 +738,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
       {/* Reorder loading overlay */}
       {reordering && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm pointer-events-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm pointer-events-none" role="status" aria-live="polite">
           <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-5 py-3 shadow-xl">
             <Spinner size="md" className="text-violet-500" />
             <span className="text-sm text-gray-700 font-medium">Saving changes…</span>
