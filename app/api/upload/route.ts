@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { put } from '@vercel/blob'
 import { getUserId } from '@/lib/session'
+import crypto from 'crypto'
 
 export async function POST(request: Request) {
   try {
@@ -34,7 +35,17 @@ export async function POST(request: Request) {
       )
     }
 
-    const blob = await put(file.name, file, {
+    // Sanitize filename: extract extension from MIME type and use a unique ID
+    const extMap: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+    }
+    const ext = extMap[file.type] || 'bin'
+    const uniqueName = `${crypto.randomUUID()}.${ext}`
+
+    const blob = await put(uniqueName, file, {
       access: 'public',
     })
 

@@ -587,7 +587,8 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     }
   }
 
-  const handleCreateTask = async (columnId: string, title: string, priority: string, description?: string | null, images?: string[]) => {
+  const handleCreateTask = async (opts: { columnId: string; title: string; priority: string; description?: string | null; images?: string[] }) => {
+    const { columnId, title, priority, description, images } = opts
     // Handle #jira prefix for bulk ticket creation (client-side)
     if (title.startsWith('#jira ')) {
       const jiraBaseUrl = board.jiraBaseUrl
@@ -783,7 +784,13 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     if (!addTaskColumnId || !addTaskTitle.trim()) return
     setCreatingTask(true)
     try {
-      await handleCreateTask(addTaskColumnId, addTaskTitle.trim(), addTaskPriority, addTaskDescription || null, addTaskImages)
+      await handleCreateTask({
+        columnId: addTaskColumnId,
+        title: addTaskTitle.trim(),
+        priority: addTaskPriority,
+        description: addTaskDescription || null,
+        images: addTaskImages,
+      })
       closeAddTaskModal()
     } finally {
       setCreatingTask(false)
@@ -800,6 +807,8 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     })
 
   const hasJiraPat = !!board.jiraPat
+
+  const noop = useCallback(() => {}, [])
 
   return (
     <>
@@ -974,11 +983,11 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
             <div className="w-72 h-[calc(100vh-8rem)] rounded-xl bg-gray-50/80 shadow-xl ring-2 ring-violet-300/50 rotate-[1.5deg] scale-[1.02] opacity-90">
               <KanbanColumn
                 column={activeColumn}
-                onAddTask={() => {}}
-                onDeleteTask={() => {}}
-                onEditTask={() => {}}
-                onUpdateColumn={() => {}}
-                onDeleteColumn={() => {}}
+                onAddTask={noop}
+                onDeleteTask={noop}
+                onEditTask={noop}
+                onUpdateColumn={noop}
+                onDeleteColumn={noop}
                 isOverlay
               />
             </div>
