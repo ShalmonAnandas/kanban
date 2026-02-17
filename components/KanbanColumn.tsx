@@ -101,7 +101,7 @@ export function KanbanColumn({
   }
 
   return (
-    <div className={`flex flex-col w-72 rounded-xl shrink-0 transition-all duration-200 ${
+    <div className={`flex flex-col w-72 h-[calc(100vh-8rem)] rounded-xl shrink-0 transition-all duration-200 ${
       highlighted
         ? 'bg-violet-50/80 ring-2 ring-violet-300/60 ring-offset-1'
         : 'bg-gray-50/80'
@@ -188,7 +188,7 @@ export function KanbanColumn({
       >
         <div
           ref={setNodeRef}
-          className={`flex flex-col gap-1.5 px-2 pb-2 min-h-[120px] flex-1 transition-colors duration-200 rounded-lg mx-1 ${
+          className={`flex flex-col gap-1.5 px-2 pb-2 min-h-0 flex-1 overflow-y-auto transition-colors duration-200 rounded-lg mx-1 ${
             highlighted ? 'bg-violet-100/30' : ''
           }`}
         >
