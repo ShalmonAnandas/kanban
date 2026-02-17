@@ -188,6 +188,7 @@ export function KanbanColumn({
       >
         <div
           ref={setNodeRef}
+          tabIndex={0}
           className={`flex flex-col gap-1.5 px-2 pb-2 min-h-0 flex-1 overflow-y-auto transition-colors duration-200 rounded-lg mx-1 ${
             highlighted ? 'bg-violet-100/30' : ''
           }`}
