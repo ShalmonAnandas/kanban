@@ -14,26 +14,6 @@ export async function POST(request: Request) {
       )
     }
     
-    // Verify column belongs to user
-    const column = await prisma.column.findFirst({
-      where: {
-        id: columnId,
-        board: {
-          userId,
-        },
-      },
-      include: {
-        board: true,
-      },
-    })
-    
-    if (!column) {
-      return NextResponse.json(
-        { error: 'Column not found' },
-        { status: 404 }
-      )
-    }
-    
     // Handle #jira prefix for bulk ticket creation
     // Note: JIRA fetching is now done client-side to support Zscaler
     if (title.startsWith('#jira ')) {
@@ -43,11 +23,26 @@ export async function POST(request: Request) {
       )
     }
     
-    // Get the next order number
-    const lastTask = await prisma.task.findFirst({
-      where: { columnId },
-      orderBy: { order: 'desc' },
-    })
+    // Verify column belongs to user and get last task order in parallel
+    const [column, lastTask] = await Promise.all([
+      prisma.column.findFirst({
+        where: {
+          id: columnId,
+          board: { userId },
+        },
+      }),
+      prisma.task.findFirst({
+        where: { columnId },
+        orderBy: { order: 'desc' },
+      }),
+    ])
+    
+    if (!column) {
+      return NextResponse.json(
+        { error: 'Column not found' },
+        { status: 404 }
+      )
+    }
     
     const task = await prisma.task.create({
       data: {
