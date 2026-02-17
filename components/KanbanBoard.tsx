@@ -63,23 +63,6 @@ type KanbanBoardProps = {
   initialBoard: Board
 }
 
-// Normalize date fields from API responses to ISO strings.
-function serializeBoardDates(raw: Board): Board {
-  return {
-    ...raw,
-    columns: raw.columns.map((col) => ({
-      ...col,
-      tasks: col.tasks.map((t) => ({
-        ...t,
-        startDate: t.startDate ? String(t.startDate) : null,
-        endDate: t.endDate ? String(t.endDate) : null,
-        createdAt: String(t.createdAt),
-        updatedAt: String(t.updatedAt),
-      })),
-    })),
-  }
-}
-
 export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const [board, setBoard] = useState<Board>(initialBoard)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
@@ -481,12 +464,6 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     // Persist to backend
     setReordering(true)
     try {
-      console.log('[DragEnd] Persisting to backend:', {
-        taskId: activeId,
-        columnId: finalPosition.columnId,
-        newOrder: finalPosition.order,
-      })
-
       const response = await fetch('/api/tasks/reorder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -498,9 +475,23 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       })
 
       if (response.ok) {
-        const updatedBoard = await response.json()
-        console.log('[DragEnd] Successfully persisted to backend')
-        setBoard(serializeBoardDates(updatedBoard))
+        const updatedTask = await response.json()
+        // Only update date fields from server response; optimistic state already has correct positions
+        setBoard((prev) => ({
+          ...prev,
+          columns: prev.columns.map((col) => ({
+            ...col,
+            tasks: col.tasks.map((t) =>
+              t.id === activeId
+                ? {
+                    ...t,
+                    startDate: updatedTask.startDate ? String(updatedTask.startDate) : null,
+                    endDate: updatedTask.endDate ? String(updatedTask.endDate) : null,
+                  }
+                : t
+            ),
+          })),
+        }))
       } else {
         const errorData = await response.text()
         console.error('[DragEnd] Backend returned error:', response.status, errorData)
@@ -745,11 +736,13 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         </div>
       )}
 
-      {/* Reorder loading indicator */}
+      {/* Reorder loading overlay */}
       {reordering && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-lg">
-          <Spinner size="sm" className="text-violet-500" />
-          <span className="text-xs text-gray-600 font-medium">Saving…</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm pointer-events-none" role="status" aria-live="polite">
+          <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-5 py-3 shadow-xl">
+            <Spinner size="md" className="text-violet-500" />
+            <span className="text-sm text-gray-700 font-medium">Saving changes…</span>
+          </div>
         </div>
       )}
 

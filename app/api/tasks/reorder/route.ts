@@ -7,8 +7,6 @@ export async function POST(request: Request) {
     const userId = await getUserId()
     const { taskId, columnId, newOrder } = await request.json()
     
-    console.log('[Reorder API] Received request:', { taskId, columnId, newOrder, userId })
-    
     if (!taskId || !columnId || newOrder === undefined) {
       return NextResponse.json(
         { error: 'taskId, columnId, and newOrder are required' },
@@ -16,120 +14,70 @@ export async function POST(request: Request) {
       )
     }
     
-    // Verify task belongs to user
-    const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        column: {
-          board: {
-            userId,
+    // Use a single transaction for verification + reorder to minimize DB round trips
+    const updatedTask = await prisma.$transaction(async (tx) => {
+      // Verify task and target column belong to user in parallel
+      const [task, targetColumn] = await Promise.all([
+        tx.task.findFirst({
+          where: {
+            id: taskId,
+            column: { board: { userId } },
           },
-        },
-      },
-    })
-    
-    if (!task) {
-      return NextResponse.json(
-        { error: 'Task not found' },
-        { status: 404 }
-      )
-    }
-    
-    // Verify target column belongs to user
-    const targetColumn = await prisma.column.findFirst({
-      where: {
-        id: columnId,
-        board: {
-          userId,
-        },
-      },
-    })
-    
-    if (!targetColumn) {
-      return NextResponse.json(
-        { error: 'Column not found' },
-        { status: 404 }
-      )
-    }
-    
-    const oldColumnId = task.columnId
-    const oldOrder = task.order
-    
-    console.log('[Reorder API] Current state:', { oldColumnId, oldOrder, newColumnId: columnId, newOrder })
-    
-    // Use a transaction to ensure consistency
-    await prisma.$transaction(async (tx) => {
+        }),
+        tx.column.findFirst({
+          where: {
+            id: columnId,
+            board: { userId },
+          },
+        }),
+      ])
+
+      if (!task) throw new Error('Task not found')
+      if (!targetColumn) throw new Error('Column not found')
+      
+      const oldColumnId = task.columnId
+      const oldOrder = task.order
+      
       if (oldColumnId === columnId) {
         // Moving within same column
         if (newOrder > oldOrder) {
-          // Moving down: decrease order of items between old and new position
           await tx.task.updateMany({
             where: {
               columnId,
-              order: {
-                gt: oldOrder,
-                lte: newOrder,
-              },
+              order: { gt: oldOrder, lte: newOrder },
             },
-            data: {
-              order: {
-                decrement: 1,
-              },
-            },
+            data: { order: { decrement: 1 } },
           })
         } else if (newOrder < oldOrder) {
-          // Moving up: increase order of items between new and old position
           await tx.task.updateMany({
             where: {
               columnId,
-              order: {
-                gte: newOrder,
-                lt: oldOrder,
-              },
+              order: { gte: newOrder, lt: oldOrder },
             },
-            data: {
-              order: {
-                increment: 1,
-              },
-            },
+            data: { order: { increment: 1 } },
           })
         }
       } else {
         // Moving to different column
-        // Decrease order of items after old position in old column
-        await tx.task.updateMany({
-          where: {
-            columnId: oldColumnId,
-            order: {
-              gt: oldOrder,
+        await Promise.all([
+          tx.task.updateMany({
+            where: {
+              columnId: oldColumnId,
+              order: { gt: oldOrder },
             },
-          },
-          data: {
-            order: {
-              decrement: 1,
+            data: { order: { decrement: 1 } },
+          }),
+          tx.task.updateMany({
+            where: {
+              columnId,
+              order: { gte: newOrder },
             },
-          },
-        })
-        
-        // Increase order of items at or after new position in new column
-        await tx.task.updateMany({
-          where: {
-            columnId,
-            order: {
-              gte: newOrder,
-            },
-          },
-          data: {
-            order: {
-              increment: 1,
-            },
-          },
-        })
+            data: { order: { increment: 1 } },
+          }),
+        ])
       }
       
-      // Update the task with date tracking based on column flags.
-      // startDate is preserved permanently once set (records when work began).
-      // endDate is set/cleared dynamically based on current column (tracks completion state).
+      // Date tracking based on column flags
       const dateUpdates: { startDate?: Date; endDate?: Date | null } = {}
       if (targetColumn.isEnd) {
         dateUpdates.endDate = new Date()
@@ -140,7 +88,7 @@ export async function POST(request: Request) {
         dateUpdates.startDate = new Date()
       }
 
-      await tx.task.update({
+      return tx.task.update({
         where: { id: taskId },
         data: {
           columnId,
@@ -148,38 +96,16 @@ export async function POST(request: Request) {
           ...dateUpdates,
         },
       })
-      
-      console.log('[Reorder API] Task updated successfully')
     })
     
-    // Fetch the updated board state
-    const board = await prisma.board.findFirst({
-      where: {
-        columns: {
-          some: {
-            id: columnId,
-          },
-        },
-      },
-      include: {
-        columns: {
-          orderBy: { order: 'asc' },
-          include: {
-            tasks: {
-              orderBy: { order: 'asc' },
-            },
-          },
-        },
-      },
-    })
-    
-    console.log('[Reorder API] Returning updated board')
-    return NextResponse.json(board)
+    // Return only the updated task instead of the full board
+    return NextResponse.json(updatedTask)
   } catch (error) {
-    console.error('[Reorder API] Error reordering task:', error)
-    return NextResponse.json(
-      { error: 'Failed to reorder task' },
-      { status: 500 }
-    )
+    const message = error instanceof Error ? error.message : 'Failed to reorder task'
+    const status = message === 'Task not found' || message === 'Column not found' ? 404 : 500
+    if (status === 500) {
+      console.error('[Reorder API] Error reordering task:', error)
+    }
+    return NextResponse.json({ error: message }, { status })
   }
 }
