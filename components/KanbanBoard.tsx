@@ -398,51 +398,70 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     const activeId = active.id as string
     const overId = over.id as string
 
-    // Capture final position and apply within-column reordering
-    let finalPosition: { columnId: string; order: number } | undefined
-    let shouldPersist = false
-
-    setBoard((prevBoard) => {
-      const activeColId = resolveColumnId(activeId, prevBoard.columns)
-      const overColId = resolveColumnId(overId, prevBoard.columns)
+    const computeDragResult = (baseBoard: Board) => {
+      const activeColId = resolveColumnId(activeId, baseBoard.columns)
+      const overColId = resolveColumnId(overId, baseBoard.columns)
 
       if (!activeColId || !overColId) {
-        return prevBoard
+        return { nextBoard: baseBoard, finalPos: undefined }
       }
 
-      if (activeColId !== overColId) {
-        // Cross-column move was already handled by handleDragOver, just capture position
-        finalPosition = getTaskPosition(activeId, prevBoard.columns)
-        shouldPersist = true
-        return prevBoard
+      const activeCol = baseBoard.columns.find((c) => c.id === activeColId)
+      const overCol = baseBoard.columns.find((c) => c.id === overColId)
+      if (!activeCol || !overCol) {
+        return { nextBoard: baseBoard, finalPos: undefined }
       }
 
-      // Same-column reorder
-      const col = prevBoard.columns.find((c) => c.id === activeColId)
-      if (!col) {
-        return prevBoard
+      const oldIndex = activeCol.tasks.findIndex((t) => t.id === activeId)
+      let newIndex = overCol.tasks.findIndex((t) => t.id === overId)
+      if (newIndex === -1) {
+        newIndex = overCol.tasks.length
+      }
+      if (oldIndex === -1) {
+        return { nextBoard: baseBoard, finalPos: undefined }
       }
 
-      const oldIndex = col.tasks.findIndex((t) => t.id === activeId)
-      const newIndex = col.tasks.findIndex((t) => t.id === overId)
+      const movingTask = activeCol.tasks[oldIndex]
+      let nextBoard = baseBoard
 
-      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
-        return prevBoard
+      if (activeColId === overColId) {
+        if (oldIndex !== newIndex) {
+          nextBoard = {
+            ...baseBoard,
+            columns: baseBoard.columns.map((c) => {
+              if (c.id !== activeColId) return c
+              const reordered = arrayMove(c.tasks, oldIndex, newIndex)
+              return { ...c, tasks: reordered.map((t, i) => ({ ...t, order: i })) }
+            }),
+          }
+        }
+      } else {
+        nextBoard = {
+          ...baseBoard,
+          columns: baseBoard.columns.map((c) => {
+            if (c.id === activeColId) {
+              const remaining = c.tasks.filter((t) => t.id !== activeId)
+              return { ...c, tasks: remaining.map((t, i) => ({ ...t, order: i })) }
+            }
+            if (c.id === overColId) {
+              const inserted = [...c.tasks]
+              inserted.splice(newIndex, 0, { ...movingTask, columnId: overColId })
+              return { ...c, tasks: inserted.map((t, i) => ({ ...t, order: i })) }
+            }
+            return c
+          }),
+        }
       }
 
-      const newBoard = {
-        ...prevBoard,
-        columns: prevBoard.columns.map((c) => {
-          if (c.id !== activeColId) return c
-          const reordered = arrayMove(c.tasks, oldIndex, newIndex)
-          return { ...c, tasks: reordered.map((t, i) => ({ ...t, order: i })) }
-        }),
-      }
+      return { nextBoard, finalPos: getTaskPosition(activeId, nextBoard.columns) }
+    }
 
-      finalPosition = getTaskPosition(activeId, newBoard.columns)
-      shouldPersist = true
-      return newBoard
-    })
+    const result = computeDragResult(board)
+    const finalPosition = result.finalPos
+    const shouldPersist = !!finalPosition
+    if (result.nextBoard !== board) {
+      setBoard((prevBoard) => (prevBoard === board ? result.nextBoard : computeDragResult(prevBoard).nextBoard))
+    }
 
     if (!finalPosition || !shouldPersist) {
       dragStartBoardRef.current = null
