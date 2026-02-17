@@ -398,64 +398,69 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     const activeId = active.id as string
     const overId = over.id as string
 
-    // Compute final position synchronously (do not rely on setState callback side effects)
-    const activeColId = resolveColumnId(activeId, board.columns)
-    const overColId = resolveColumnId(overId, board.columns)
+    const computeDragResult = (baseBoard: Board) => {
+      const activeColId = resolveColumnId(activeId, baseBoard.columns)
+      const overColId = resolveColumnId(overId, baseBoard.columns)
 
-    let finalPosition: { columnId: string; order: number } | undefined
-    let shouldPersist = false
+      if (!activeColId || !overColId) {
+        return { nextBoard: baseBoard, finalPos: undefined }
+      }
 
-    if (activeColId && overColId) {
-      const activeCol = board.columns.find((c) => c.id === activeColId)
-      const overCol = board.columns.find((c) => c.id === overColId)
+      const activeCol = baseBoard.columns.find((c) => c.id === activeColId)
+      const overCol = baseBoard.columns.find((c) => c.id === overColId)
+      if (!activeCol || !overCol) {
+        return { nextBoard: baseBoard, finalPos: undefined }
+      }
 
-      if (activeCol && overCol) {
-        const oldIndex = activeCol.tasks.findIndex((t) => t.id === activeId)
-        let newIndex = overCol.tasks.findIndex((t) => t.id === overId)
-        if (newIndex === -1) {
-          newIndex = overCol.tasks.length
+      const oldIndex = activeCol.tasks.findIndex((t) => t.id === activeId)
+      let newIndex = overCol.tasks.findIndex((t) => t.id === overId)
+      if (newIndex === -1) {
+        newIndex = overCol.tasks.length
+      }
+      if (oldIndex === -1) {
+        return { nextBoard: baseBoard, finalPos: undefined }
+      }
+
+      const movingTask = activeCol.tasks[oldIndex]
+      let nextBoard = baseBoard
+
+      if (activeColId === overColId) {
+        if (oldIndex !== newIndex) {
+          nextBoard = {
+            ...baseBoard,
+            columns: baseBoard.columns.map((c) => {
+              if (c.id !== activeColId) return c
+              const reordered = arrayMove(c.tasks, oldIndex, newIndex)
+              return { ...c, tasks: reordered.map((t, i) => ({ ...t, order: i })) }
+            }),
+          }
         }
-
-        if (oldIndex !== -1) {
-          const movingTask = activeCol.tasks[oldIndex]
-          let nextBoard = board
-
-          if (activeColId === overColId) {
-            if (oldIndex !== newIndex) {
-              nextBoard = {
-                ...board,
-                columns: board.columns.map((c) => {
-                  if (c.id !== activeColId) return c
-                  const reordered = arrayMove(c.tasks, oldIndex, newIndex)
-                  return { ...c, tasks: reordered.map((t, i) => ({ ...t, order: i })) }
-                }),
-              }
+      } else {
+        nextBoard = {
+          ...baseBoard,
+          columns: baseBoard.columns.map((c) => {
+            if (c.id === activeColId) {
+              const remaining = c.tasks.filter((t) => t.id !== activeId)
+              return { ...c, tasks: remaining.map((t, i) => ({ ...t, order: i })) }
             }
-          } else {
-            nextBoard = {
-              ...board,
-              columns: board.columns.map((c) => {
-                if (c.id === activeColId) {
-                  const remaining = c.tasks.filter((t) => t.id !== activeId)
-                  return { ...c, tasks: remaining.map((t, i) => ({ ...t, order: i })) }
-                }
-                if (c.id === overColId) {
-                  const inserted = [...c.tasks]
-                  inserted.splice(newIndex, 0, { ...movingTask, columnId: overColId })
-                  return { ...c, tasks: inserted.map((t, i) => ({ ...t, order: i })) }
-                }
-                return c
-              }),
+            if (c.id === overColId) {
+              const inserted = [...c.tasks]
+              inserted.splice(newIndex, 0, { ...movingTask, columnId: overColId })
+              return { ...c, tasks: inserted.map((t, i) => ({ ...t, order: i })) }
             }
-          }
-
-          finalPosition = getTaskPosition(activeId, nextBoard.columns)
-          shouldPersist = !!finalPosition
-          if (nextBoard !== board) {
-            setBoard(nextBoard)
-          }
+            return c
+          }),
         }
       }
+
+      return { nextBoard, finalPos: getTaskPosition(activeId, nextBoard.columns) }
+    }
+
+    const result = computeDragResult(board)
+    const finalPosition = result.finalPos
+    const shouldPersist = !!finalPosition
+    if (result.nextBoard !== board) {
+      setBoard((prevBoard) => (prevBoard === board ? result.nextBoard : computeDragResult(prevBoard).nextBoard))
     }
 
     if (!finalPosition || !shouldPersist) {
