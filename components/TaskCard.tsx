@@ -102,6 +102,14 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit }: Task
                 : task.description}
             </p>
           )}
+          {task.images && task.images.length > 0 && (
+            <div className="flex items-center gap-1 mt-1.5">
+              <svg className="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-[10px] text-gray-400">{task.images.length}</span>
+            </div>
+          )}
           {(task.startDate || task.endDate) && (
             <div className="flex items-center gap-2 mt-2 text-[10px] text-gray-400 font-medium">
               {task.startDate && <span className="bg-gray-50 px-1.5 py-0.5 rounded">📅 {formatDate(task.startDate)}</span>}

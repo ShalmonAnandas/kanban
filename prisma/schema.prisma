@@ -60,6 +60,7 @@ model Task {
   column      Column    @relation(fields: [columnId], references: [id], onDelete: Cascade)
   startDate   DateTime?
   endDate     DateTime?
+  images      String[]  @default([])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
