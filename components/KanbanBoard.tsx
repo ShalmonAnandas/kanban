@@ -414,7 +414,11 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       const oldIndex = board.columns.findIndex((c) => c.id === active.id)
       // Resolve over.id to a column — it might be a task within a column
       const overColId = resolveColumnId(over.id, board.columns)
-      const newIndex = overColId ? board.columns.findIndex((c) => c.id === overColId) : -1
+      if (!overColId) {
+        dragStartBoardRef.current = null
+        return
+      }
+      const newIndex = board.columns.findIndex((c) => c.id === overColId)
 
       if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
         const newColumns = arrayMove(board.columns, oldIndex, newIndex).map((c, i) => ({ ...c, order: i }))
@@ -1226,9 +1230,12 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-zoom-out"
           onClick={() => setViewerImageUrl(null)}
+          onKeyDown={(e) => { if (e.key === 'Escape') setViewerImageUrl(null) }}
           role="dialog"
           aria-modal="true"
           aria-label="Image viewer"
+          tabIndex={0}
+          ref={(el) => el?.focus()}
         >
           <button
             onClick={() => setViewerImageUrl(null)}
