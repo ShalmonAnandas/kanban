@@ -5,7 +5,7 @@ import { getUserId } from '@/lib/session'
 export async function POST(request: Request) {
   try {
     const userId = await getUserId()
-    const { title, description, columnId, priority } = await request.json()
+    const { title, description, columnId, priority, images } = await request.json()
     
     if (!title || !columnId) {
       return NextResponse.json(
@@ -52,6 +52,7 @@ export async function POST(request: Request) {
         priority: priority || 'medium',
         order: (lastTask?.order ?? -1) + 1,
         ...(column.isStart && { startDate: new Date() }),
+        ...(Array.isArray(images) && { images }),
       },
     })
     

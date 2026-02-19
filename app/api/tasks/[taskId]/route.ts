@@ -40,6 +40,7 @@ export async function PATCH(
         ...(body.order !== undefined && { order: body.order }),
         ...(body.columnId !== undefined && { columnId: body.columnId }),
         ...(body.priority !== undefined && { priority: body.priority }),
+        ...(Array.isArray(body.images) && { images: body.images }),
       },
     })
     

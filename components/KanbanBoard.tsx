@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Image from 'next/image'
 import {
   DndContext,
   DragOverlay,
@@ -15,7 +16,9 @@ import {
   UniqueIdentifier,
 } from '@dnd-kit/core'
 import {
+  SortableContext,
   sortableKeyboardCoordinates,
+  horizontalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable'
 import { KanbanColumn } from './KanbanColumn'
@@ -32,6 +35,7 @@ export type Task = {
   columnId: string
   startDate: string | null
   endDate: string | null
+  images: string[]
   createdAt: string
   updatedAt: string
 }
@@ -66,6 +70,7 @@ type KanbanBoardProps = {
 export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const [board, setBoard] = useState<Board>(initialBoard)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
+  const [activeColumn, setActiveColumn] = useState<Column | null>(null)
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
 
   // Board settings
@@ -81,12 +86,23 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const [newColIsEnd, setNewColIsEnd] = useState(false)
   const [addingColumn, setAddingColumn] = useState(false)
 
-  // Task detail modal
+  // Task detail modal (edit)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editPriority, setEditPriority] = useState('medium')
+  const [editImages, setEditImages] = useState<string[]>([])
   const [savingTask, setSavingTask] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+
+  // Add task modal
+  const [addTaskColumnId, setAddTaskColumnId] = useState<string | null>(null)
+  const [addTaskTitle, setAddTaskTitle] = useState('')
+  const [addTaskDescription, setAddTaskDescription] = useState('')
+  const [addTaskPriority, setAddTaskPriority] = useState('medium')
+  const [addTaskImages, setAddTaskImages] = useState<string[]>([])
+  const [creatingTask, setCreatingTask] = useState(false)
+  const [addTaskUploadingImage, setAddTaskUploadingImage] = useState(false)
 
   // Global loading for reorder
   const [reordering, setReordering] = useState(false)
@@ -138,10 +154,12 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     setEditTitle(task.title)
     setEditDescription(task.description || '')
     setEditPriority(task.priority)
+    setEditImages(task.images || [])
   }
 
   const closeTaskModal = () => {
     setSelectedTask(null)
+    setEditImages([])
   }
 
   const handleSaveTask = async () => {
@@ -155,6 +173,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
           title: editTitle,
           description: editDescription || null,
           priority: editPriority,
+          images: editImages,
         }),
       })
       if (response.ok) {
@@ -291,11 +310,22 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
+    dragStartBoardRef.current = board
+
+    // Check if dragging a column
+    const draggedColumn = board.columns.find((c) => c.id === active.id)
+    if (draggedColumn) {
+      setActiveColumn(draggedColumn)
+      setActiveTask(null)
+      return
+    }
+
+    // Otherwise, dragging a task
     const task = board.columns
       .flatMap((col) => col.tasks)
       .find((t) => t.id === active.id)
     setActiveTask(task || null)
-    dragStartBoardRef.current = board
+    setActiveColumn(null)
     const col = board.columns.find((c) => c.tasks.some((t) => t.id === active.id))
     setActiveColumnId(col?.id || null)
   }
@@ -303,6 +333,9 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event
     if (!over) return
+
+    // If dragging a column, skip (handled in dragEnd)
+    if (activeColumn) return
 
     const activeId = active.id as string
     const overId = over.id as string
@@ -366,6 +399,50 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
+
+    // Handle column drag end
+    if (activeColumn) {
+      setActiveColumn(null)
+      if (!over || active.id === over.id) {
+        dragStartBoardRef.current = null
+        return
+      }
+
+      const oldIndex = board.columns.findIndex((c) => c.id === active.id)
+      const newIndex = board.columns.findIndex((c) => c.id === over.id)
+
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        const newColumns = arrayMove(board.columns, oldIndex, newIndex).map((c, i) => ({ ...c, order: i }))
+        setBoard((prev) => ({ ...prev, columns: newColumns }))
+
+        // Persist column order
+        try {
+          const response = await fetch('/api/columns/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              boardId: board.id,
+              columnIds: newColumns.map((c) => c.id),
+            }),
+          })
+          if (!response.ok) {
+            console.error('Failed to reorder columns')
+            if (dragStartBoardRef.current) {
+              setBoard(dragStartBoardRef.current)
+            }
+          }
+        } catch (error) {
+          console.error('Failed to reorder columns:', error)
+          if (dragStartBoardRef.current) {
+            setBoard(dragStartBoardRef.current)
+          }
+        }
+      }
+      dragStartBoardRef.current = null
+      return
+    }
+
+    // Handle task drag end
     setActiveTask(null)
     setActiveColumnId(null)
 
@@ -510,7 +587,8 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     }
   }
 
-  const handleCreateTask = async (columnId: string, title: string, priority: string) => {
+  const handleCreateTask = async (opts: { columnId: string; title: string; priority: string; description?: string | null; images?: string[] }) => {
+    const { columnId, title, priority, description, images } = opts
     // Handle #jira prefix for bulk ticket creation (client-side)
     if (title.startsWith('#jira ')) {
       const jiraBaseUrl = board.jiraBaseUrl
@@ -614,7 +692,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     const response = await fetch('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, columnId, priority }),
+      body: JSON.stringify({ title, columnId, priority, description: description || null, images: images || [] }),
     })
 
     if (response.ok) {
@@ -658,6 +736,67 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     }
   }
 
+  // Image upload handler
+  const handleImageUpload = async (
+    file: File,
+    setImages: React.Dispatch<React.SetStateAction<string[]>>,
+    setUploading: React.Dispatch<React.SetStateAction<boolean>>
+  ) => {
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      if (response.ok) {
+        const { url } = await response.json()
+        setImages((prev) => [...prev, url])
+      } else {
+        console.error('Failed to upload image')
+      }
+    } catch (error) {
+      console.error('Failed to upload image:', error)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // Open add task modal
+  const openAddTaskModal = (columnId: string) => {
+    setAddTaskColumnId(columnId)
+    setAddTaskTitle('')
+    setAddTaskDescription('')
+    setAddTaskPriority('medium')
+    setAddTaskImages([])
+  }
+
+  const closeAddTaskModal = () => {
+    setAddTaskColumnId(null)
+    setAddTaskTitle('')
+    setAddTaskDescription('')
+    setAddTaskPriority('medium')
+    setAddTaskImages([])
+  }
+
+  const handleAddTaskSubmit = async () => {
+    if (!addTaskColumnId || !addTaskTitle.trim()) return
+    setCreatingTask(true)
+    try {
+      await handleCreateTask({
+        columnId: addTaskColumnId,
+        title: addTaskTitle.trim(),
+        priority: addTaskPriority,
+        description: addTaskDescription || null,
+        images: addTaskImages,
+      })
+      closeAddTaskModal()
+    } finally {
+      setCreatingTask(false)
+    }
+  }
+
   const formatDateDisplay = (iso: string) =>
     new Date(iso).toLocaleDateString(undefined, {
       year: 'numeric',
@@ -668,6 +807,8 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     })
 
   const hasJiraPat = !!board.jiraPat
+
+  const noop = useCallback(() => {}, [])
 
   return (
     <>
@@ -753,19 +894,20 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-3 overflow-x-auto pb-4 px-6 items-start">
-          {board.columns.map((column) => (
-            <KanbanColumn
-              key={column.id}
-              column={column}
-              onCreateTask={handleCreateTask}
-              onDeleteTask={handleDeleteTask}
-              onEditTask={openTaskModal}
-              onUpdateColumn={handleUpdateColumn}
-              onDeleteColumn={handleDeleteColumn}
-              isOver={activeColumnId === column.id}
-            />
-          ))}
+        <SortableContext items={board.columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+          <div className="flex gap-3 overflow-x-auto pb-4 px-6 items-start">
+            {board.columns.map((column) => (
+              <KanbanColumn
+                key={column.id}
+                column={column}
+                onAddTask={openAddTaskModal}
+                onDeleteTask={handleDeleteTask}
+                onEditTask={openTaskModal}
+                onUpdateColumn={handleUpdateColumn}
+                onDeleteColumn={handleDeleteColumn}
+                isOver={activeColumnId === column.id}
+              />
+            ))}
 
           {/* Add column */}
           <div className="shrink-0 w-72">
@@ -833,17 +975,31 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
               </button>
             )}
           </div>
-        </div>
+          </div>
+        </SortableContext>
         <DragOverlay dropAnimation={null}>
           {activeTask ? <TaskCard task={activeTask} isDragging isOverlay /> : null}
+          {activeColumn ? (
+            <div className="w-72 h-[calc(100vh-8rem)] rounded-xl bg-gray-50/80 shadow-xl ring-2 ring-violet-300/50 rotate-[1.5deg] scale-[1.02] opacity-90">
+              <KanbanColumn
+                column={activeColumn}
+                onAddTask={noop}
+                onDeleteTask={noop}
+                onEditTask={noop}
+                onUpdateColumn={noop}
+                onDeleteColumn={noop}
+                isOverlay
+              />
+            </div>
+          ) : null}
         </DragOverlay>
       </DndContext>
 
-      {/* Task Detail Modal */}
+      {/* Task Detail Modal (Edit) */}
       {selectedTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="task-modal-title" onClick={closeTaskModal}>
           <div
-            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-md mx-4 p-5"
+            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-md mx-4 p-5 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="task-modal-title" className="text-sm font-bold text-gray-900 mb-4">Edit Task</h2>
@@ -878,6 +1034,49 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
               <option value="nice_to_have">⚪ Nice to have</option>
             </select>
 
+            {/* Image upload */}
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Images</label>
+            <div className="mb-3">
+              {editImages.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {editImages.map((url, idx) => (
+                    <div key={idx} className="relative group">
+                      <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                      <button
+                        type="button"
+                        onClick={() => setEditImages((prev) => prev.filter((_, i) => i !== idx))}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Remove image"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
+                {uploadingImage ? <Spinner size="sm" className="text-violet-500" /> : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                )}
+                {uploadingImage ? 'Uploading…' : 'Upload image'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  disabled={uploadingImage}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      handleImageUpload(file, setEditImages, setUploadingImage)
+                      e.target.value = ''
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
             {(selectedTask.startDate || selectedTask.endDate) && (
               <div className="flex gap-3 mb-3 text-[10px] text-gray-500">
                 {selectedTask.startDate && (
@@ -902,11 +1101,115 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
               </button>
               <button
                 onClick={handleSaveTask}
-                disabled={savingTask}
+                disabled={savingTask || uploadingImage}
                 className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
               >
                 {savingTask && <Spinner size="sm" className="text-white" />}
                 {savingTask ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Task Modal */}
+      {addTaskColumnId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="add-task-modal-title" onClick={closeAddTaskModal}>
+          <div
+            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-md mx-4 p-5 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="add-task-modal-title" className="text-sm font-bold text-gray-900 mb-4">Add Task</h2>
+
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
+            <input
+              type="text"
+              value={addTaskTitle}
+              onChange={(e) => setAddTaskTitle(e.target.value)}
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
+              placeholder="Task title…"
+              autoFocus
+            />
+
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Description</label>
+            <textarea
+              value={addTaskDescription}
+              onChange={(e) => setAddTaskDescription(e.target.value)}
+              rows={4}
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
+              placeholder="Add a description…"
+            />
+
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
+            <select
+              value={addTaskPriority}
+              onChange={(e) => setAddTaskPriority(e.target.value)}
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
+            >
+              <option value="critical">🔴 Critical</option>
+              <option value="high">🟠 High</option>
+              <option value="medium">🔵 Medium</option>
+              <option value="low">🟢 Low</option>
+              <option value="nice_to_have">⚪ Nice to have</option>
+            </select>
+
+            {/* Image upload */}
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Images</label>
+            <div className="mb-3">
+              {addTaskImages.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {addTaskImages.map((url, idx) => (
+                    <div key={idx} className="relative group">
+                      <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                      <button
+                        type="button"
+                        onClick={() => setAddTaskImages((prev) => prev.filter((_, i) => i !== idx))}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Remove image"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
+                {addTaskUploadingImage ? <Spinner size="sm" className="text-violet-500" /> : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                )}
+                {addTaskUploadingImage ? 'Uploading…' : 'Upload image'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  disabled={addTaskUploadingImage}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      handleImageUpload(file, setAddTaskImages, setAddTaskUploadingImage)
+                      e.target.value = ''
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-1">
+              <button
+                onClick={closeAddTaskModal}
+                className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddTaskSubmit}
+                disabled={creatingTask || addTaskUploadingImage || !addTaskTitle.trim()}
+                className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
+              >
+                {creatingTask && <Spinner size="sm" className="text-white" />}
+                {creatingTask ? 'Adding…' : 'Add Task'}
               </button>
             </div>
           </div>

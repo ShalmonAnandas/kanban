@@ -4,44 +4,53 @@ import { useState, useRef, useEffect } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import {
   SortableContext,
+  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { TaskCard } from './TaskCard'
-import { Spinner } from './Spinner'
 import { Column, Task } from './KanbanBoard'
 
 type KanbanColumnProps = {
   column: Column
-  onCreateTask: (columnId: string, title: string, priority: string) => Promise<void>
+  onAddTask: (columnId: string) => void
   onDeleteTask: (taskId: string) => void
   onEditTask: (task: Task) => void
   onUpdateColumn: (columnId: string, data: Partial<Column>) => void
   onDeleteColumn: (columnId: string) => void
   isOver?: boolean
+  isOverlay?: boolean
 }
 
 export function KanbanColumn({
   column,
-  onCreateTask,
+  onAddTask,
   onDeleteTask,
   onEditTask,
   onUpdateColumn,
   onDeleteColumn,
   isOver,
+  isOverlay,
 }: KanbanColumnProps) {
-  const [isAddingTask, setIsAddingTask] = useState(false)
-  const [newTaskTitle, setNewTaskTitle] = useState('')
-  const [newTaskPriority, setNewTaskPriority] = useState('medium')
-  const [creatingTask, setCreatingTask] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(column.title)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const { setNodeRef, isOver: isDroppableOver } = useDroppable({
+  const { setNodeRef: setDroppableRef, isOver: isDroppableOver } = useDroppable({
     id: column.id,
   })
+
+  const sortable = useSortable({ id: column.id, disabled: isOverlay })
+
+  const style = isOverlay
+    ? { opacity: 0.9 }
+    : {
+        transform: CSS.Transform.toString(sortable.transform),
+        transition: sortable.transition,
+        opacity: sortable.isDragging ? 0.4 : 1,
+      }
 
   const highlighted = isOver || isDroppableOver
 
@@ -56,21 +65,6 @@ export function KanbanColumn({
     if (showMenu) document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [showMenu])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (newTaskTitle.trim()) {
-      setCreatingTask(true)
-      try {
-        await onCreateTask(column.id, newTaskTitle.trim(), newTaskPriority)
-        setNewTaskTitle('')
-        setNewTaskPriority('medium')
-        setIsAddingTask(false)
-      } finally {
-        setCreatingTask(false)
-      }
-    }
-  }
 
   const handleRename = () => {
     if (renameValue.trim() && renameValue.trim() !== column.title) {
@@ -101,14 +95,34 @@ export function KanbanColumn({
   }
 
   return (
-    <div className={`flex flex-col w-72 h-[calc(100vh-8rem)] rounded-xl shrink-0 transition-all duration-200 ${
-      highlighted
-        ? 'bg-violet-50/80 ring-2 ring-violet-300/60 ring-offset-1'
-        : 'bg-gray-50/80'
-    }`}>
+    <div
+      ref={isOverlay ? undefined : sortable.setNodeRef}
+      style={style}
+      className={`flex flex-col w-72 h-[calc(100vh-8rem)] rounded-xl shrink-0 transition-all duration-200 ${
+        highlighted
+          ? 'bg-violet-50/80 ring-2 ring-violet-300/60 ring-offset-1'
+          : 'bg-gray-50/80'
+      } ${sortable.isDragging ? 'opacity-40' : ''}`}
+    >
       {/* Column Header */}
       <div className="flex items-center justify-between px-3 pt-3 pb-2">
         <div className="flex items-center gap-2 min-w-0">
+          {/* Drag handle */}
+          <button
+            {...(isOverlay ? {} : sortable.attributes)}
+            {...(isOverlay ? {} : sortable.listeners)}
+            className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 transition-colors shrink-0 touch-none"
+            aria-label="Drag to reorder column"
+          >
+            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+              <circle cx="7" cy="4" r="1.5" />
+              <circle cx="13" cy="4" r="1.5" />
+              <circle cx="7" cy="10" r="1.5" />
+              <circle cx="13" cy="10" r="1.5" />
+              <circle cx="7" cy="16" r="1.5" />
+              <circle cx="13" cy="16" r="1.5" />
+            </svg>
+          </button>
           {isRenaming ? (
             <input
               type="text"
@@ -187,7 +201,7 @@ export function KanbanColumn({
         strategy={verticalListSortingStrategy}
       >
         <div
-          ref={setNodeRef}
+          ref={setDroppableRef}
           tabIndex={0}
           className={`flex flex-col gap-1.5 px-2 pb-2 min-h-0 flex-1 overflow-y-auto transition-colors duration-200 rounded-lg mx-1 ${
             highlighted ? 'bg-violet-100/30' : ''
@@ -215,69 +229,12 @@ export function KanbanColumn({
 
       {/* Add Task */}
       <div className="px-2 pb-2">
-        {isAddingTask ? (
-          <form onSubmit={handleSubmit} className="relative">
-            {creatingTask && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-50/80 rounded-lg">
-                <Spinner size="sm" className="text-violet-500" />
-              </div>
-            )}
-            <input
-              type="text"
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              placeholder="Task title..."
-              className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent text-gray-800 text-xs"
-              autoFocus
-              disabled={creatingTask}
-              onBlur={() => {
-                if (!newTaskTitle.trim() && !creatingTask) {
-                  setIsAddingTask(false)
-                }
-              }}
-            />
-            <select
-              value={newTaskPriority}
-              onChange={(e) => setNewTaskPriority(e.target.value)}
-              disabled={creatingTask}
-              className="w-full mt-1.5 px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400"
-            >
-              <option value="critical">🔴 Critical</option>
-              <option value="high">🟠 High</option>
-              <option value="medium">🔵 Medium</option>
-              <option value="low">🟢 Low</option>
-              <option value="nice_to_have">⚪ Nice to have</option>
-            </select>
-            <div className="flex gap-1.5 mt-1.5">
-              <button
-                type="submit"
-                disabled={creatingTask}
-                className="px-2.5 py-1 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium"
-              >
-                {creatingTask ? 'Adding…' : 'Add'}
-              </button>
-              <button
-                type="button"
-                disabled={creatingTask}
-                onClick={() => {
-                  setIsAddingTask(false)
-                  setNewTaskTitle('')
-                  setNewTaskPriority('medium')
-                }}
-                className="px-2.5 py-1 text-gray-500 rounded-lg hover:bg-white text-xs transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        ) : (
-          <button
-            onClick={() => setIsAddingTask(true)}
-            className="w-full px-2 py-1.5 text-left text-gray-400 hover:text-gray-600 rounded-lg transition-colors text-xs font-medium hover:bg-white/60"
-          >
-            + Add task
-          </button>
-        )}
+        <button
+          onClick={() => onAddTask(column.id)}
+          className="w-full px-2 py-1.5 text-left text-gray-400 hover:text-gray-600 rounded-lg transition-colors text-xs font-medium hover:bg-white/60"
+        >
+          + Add task
+        </button>
       </div>
     </div>
   )
