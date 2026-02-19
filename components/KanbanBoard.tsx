@@ -95,6 +95,9 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
   const [savingTask, setSavingTask] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
 
+  // Image viewer
+  const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null)
+
   // Add task modal
   const [addTaskColumnId, setAddTaskColumnId] = useState<string | null>(null)
   const [addTaskTitle, setAddTaskTitle] = useState('')
@@ -409,7 +412,9 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       }
 
       const oldIndex = board.columns.findIndex((c) => c.id === active.id)
-      const newIndex = board.columns.findIndex((c) => c.id === over.id)
+      // Resolve over.id to a column — it might be a task within a column
+      const overColId = resolveColumnId(over.id, board.columns)
+      const newIndex = overColId ? board.columns.findIndex((c) => c.id === overColId) : -1
 
       if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
         const newColumns = arrayMove(board.columns, oldIndex, newIndex).map((c, i) => ({ ...c, order: i }))
@@ -1041,7 +1046,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
                 <div className="flex flex-wrap gap-2 mb-2">
                   {editImages.map((url, idx) => (
                     <div key={idx} className="relative group">
-                      <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                      <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
                       <button
                         type="button"
                         onClick={() => setEditImages((prev) => prev.filter((_, i) => i !== idx))}
@@ -1160,7 +1165,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
                 <div className="flex flex-wrap gap-2 mb-2">
                   {addTaskImages.map((url, idx) => (
                     <div key={idx} className="relative group">
-                      <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                      <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
                       <button
                         type="button"
                         onClick={() => setAddTaskImages((prev) => prev.filter((_, i) => i !== idx))}
@@ -1213,6 +1218,35 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Image Viewer Lightbox */}
+      {viewerImageUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-zoom-out"
+          onClick={() => setViewerImageUrl(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image viewer"
+        >
+          <button
+            onClick={() => setViewerImageUrl(null)}
+            className="absolute top-4 right-4 w-8 h-8 bg-white/20 hover:bg-white/40 rounded-full flex items-center justify-center text-white transition-colors"
+            aria-label="Close image viewer"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <Image
+            src={viewerImageUrl}
+            alt="Full size preview"
+            width={1200}
+            height={900}
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </>
