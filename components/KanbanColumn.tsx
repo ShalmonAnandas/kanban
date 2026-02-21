@@ -116,7 +116,7 @@ export function KanbanColumn({
 
       {/* Column Header */}
       <div className="flex items-center justify-between px-3 pt-3 pb-2"
-        style={column.color ? { backgroundColor: column.color + '33' } : undefined}
+        style={column.color ? { backgroundColor: column.color + '33' } : undefined} /* 33 = 20% opacity in hex */
       >
         <div className="flex items-center gap-2 min-w-0">
           {/* Drag handle */}

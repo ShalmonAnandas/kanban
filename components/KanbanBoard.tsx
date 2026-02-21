@@ -231,14 +231,14 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return []
     const query = searchQuery.toLowerCase()
-    const results: (Task & { _columnColor?: string | null })[] = []
+    const results: (Task & { columnColor?: string | null })[] = []
     for (const col of board.columns) {
       for (const task of col.tasks) {
         const titleMatch = task.title.toLowerCase().includes(query)
         const descMatch = task.description?.toLowerCase().includes(query)
         const subtaskMatch = task.subtasks?.some(st => st.title.toLowerCase().includes(query))
         if (titleMatch || descMatch || subtaskMatch) {
-          results.push({ ...task, _columnColor: col.color })
+          results.push({ ...task, columnColor: col.color })
         }
       }
     }
@@ -1141,7 +1141,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                     key={task.id}
                     onClick={() => { openTaskModal(task); setShowSearchResults(false) }}
                     className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
-                    style={task._columnColor ? { borderLeftWidth: '4px', borderLeftColor: task._columnColor } : undefined}
+                    style={task.columnColor ? { borderLeftWidth: '4px', borderLeftColor: task.columnColor } : undefined}
                   >
                     <div className="text-xs font-medium text-gray-800 truncate">{task.title}</div>
                     {task.description && (
