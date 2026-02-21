@@ -45,6 +45,7 @@ export type Task = {
   description: string | null
   priority: string
   order: number
+  pinned: boolean
   columnId: string
   startDate: string | null
   endDate: string | null
@@ -70,6 +71,7 @@ export type Column = {
 export type Board = {
   id: string
   title: string
+  subtitle: string | null
   userId: string
   jiraBaseUrl: string | null
   jiraPat: string | null
@@ -83,6 +85,10 @@ type KanbanBoardProps = {
   userId: string
 }
 
+export type SortField = 'priority' | 'createdAt' | 'endDate'
+export type SortDirection = 'asc' | 'desc'
+export type SortConfig = { field: SortField; direction: SortDirection }
+
 const PRIORITY_ORDER: Record<string, number> = {
   critical: 0,
   high: 1,
@@ -91,13 +97,47 @@ const PRIORITY_ORDER: Record<string, number> = {
   nice_to_have: 4,
 }
 
-function sortTasksByPriority(tasks: Task[]): Task[] {
-  return [...tasks].sort((a, b) => {
-    const pa = PRIORITY_ORDER[a.priority] ?? 2
-    const pb = PRIORITY_ORDER[b.priority] ?? 2
-    if (pa !== pb) return pa - pb
-    return a.order - b.order
+const TITLE_PRESETS: { title: string; subtitle: string }[] = [
+  { title: 'My Kanban Board', subtitle: 'Drag tasks between columns to organize your work' },
+  { title: 'My Profession Hell', subtitle: 'Yep this is it' },
+  { title: 'My Personal Hell', subtitle: 'Yepcock' },
+  { title: 'Organizer', subtitle: '(Probably) (Most likely)' },
+  { title: 'OCD Treatmentizer 4000', subtitle: 'I got your back b' },
+  { title: 'Autism Simulator', subtitle: 'Yes I am talking to you, you know who' },
+]
+
+function sortTasks(tasks: Task[], config: SortConfig | undefined): Task[] {
+  const sorted = [...tasks]
+  // Pinned tasks always come first
+  sorted.sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1
+    if (!a.pinned && b.pinned) return 1
+    if (!config) return a.order - b.order
+    const dir = config.direction === 'asc' ? 1 : -1
+    switch (config.field) {
+      case 'priority': {
+        const pa = PRIORITY_ORDER[a.priority] ?? 2
+        const pb = PRIORITY_ORDER[b.priority] ?? 2
+        if (pa !== pb) return (pa - pb) * dir
+        return a.order - b.order
+      }
+      case 'createdAt': {
+        const da = new Date(a.createdAt).getTime()
+        const db = new Date(b.createdAt).getTime()
+        if (da !== db) return (da - db) * dir
+        return a.order - b.order
+      }
+      case 'endDate': {
+        const ea = a.endDate ? new Date(a.endDate).getTime() : Infinity
+        const eb = b.endDate ? new Date(b.endDate).getTime() : Infinity
+        if (ea !== eb) return (ea - eb) * dir
+        return a.order - b.order
+      }
+      default:
+        return a.order - b.order
+    }
   })
+  return sorted
 }
 
 export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
@@ -105,6 +145,18 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null)
   const [activeColumn, setActiveColumn] = useState<Column | null>(null)
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
+
+  // Dark mode
+  const [darkMode, setDarkMode] = useState(false)
+
+  // Per-column sorting
+  const [columnSorts, setColumnSorts] = useState<Record<string, SortConfig>>({})
+  const [globalSort, setGlobalSort] = useState<SortConfig | null>(null)
+
+  // Title/subtitle customization
+  const [titleInput, setTitleInput] = useState(initialBoard.title)
+  const [subtitleInput, setSubtitleInput] = useState(initialBoard.subtitle || 'Drag tasks between columns to organize your work')
+  const [savingTitle, setSavingTitle] = useState(false)
 
   // User identifier
   const [showUserIdInput, setShowUserIdInput] = useState(false)
@@ -188,6 +240,42 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   useEffect(() => {
     setBoard(initialBoard)
   }, [initialBoard])
+
+  // Initialize dark mode and sorting from localStorage
+  useEffect(() => {
+    const savedDark = localStorage.getItem('kanban-dark-mode')
+    if (savedDark === 'true') {
+      setDarkMode(true)
+      document.documentElement.classList.add('dark')
+    }
+    const savedSorts = localStorage.getItem('kanban-column-sorts')
+    if (savedSorts) {
+      try { setColumnSorts(JSON.parse(savedSorts)) } catch { /* ignore */ }
+    }
+    const savedGlobal = localStorage.getItem('kanban-global-sort')
+    if (savedGlobal) {
+      try { setGlobalSort(JSON.parse(savedGlobal)) } catch { /* ignore */ }
+    }
+  }, [])
+
+  // Persist dark mode
+  useEffect(() => {
+    localStorage.setItem('kanban-dark-mode', String(darkMode))
+    if (darkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [darkMode])
+
+  // Persist sorting preferences
+  useEffect(() => {
+    localStorage.setItem('kanban-column-sorts', JSON.stringify(columnSorts))
+  }, [columnSorts])
+
+  useEffect(() => {
+    localStorage.setItem('kanban-global-sort', JSON.stringify(globalSort))
+  }, [globalSort])
 
   // Prevent page close while saving
   useEffect(() => {
@@ -1080,10 +1168,130 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     }
   }
 
-  // Memoize priority-sorted columns to avoid re-sorting on every render
+  // Column sort handler
+  const handleColumnSortChange = (columnId: string, config: SortConfig | null) => {
+    if (globalSort) {
+      // Disable global sort but keep existing per-column settings
+      const newSorts: Record<string, SortConfig> = {}
+      for (const col of board.columns) {
+        if (col.id !== columnId) {
+          newSorts[col.id] = columnSorts[col.id] || globalSort
+        }
+      }
+      if (config) {
+        newSorts[columnId] = config
+      }
+      setGlobalSort(null)
+      setColumnSorts(newSorts)
+    } else {
+      setColumnSorts((prev) => {
+        const next = { ...prev }
+        if (config) {
+          next[columnId] = config
+        } else {
+          delete next[columnId]
+        }
+        return next
+      })
+    }
+  }
+
+  const handleGlobalSortChange = (config: SortConfig | null) => {
+    setGlobalSort(config)
+    if (config) {
+      // Apply to all columns
+      const newSorts: Record<string, SortConfig> = {}
+      for (const col of board.columns) {
+        newSorts[col.id] = config
+      }
+      setColumnSorts(newSorts)
+    } else {
+      setColumnSorts({})
+    }
+  }
+
+  // Pin toggle handler
+  const handleTogglePin = async (taskId: string) => {
+    // Find task and its column
+    let targetTask: Task | null = null
+    let targetColumnId: string | null = null
+    for (const col of board.columns) {
+      const t = col.tasks.find((t) => t.id === taskId)
+      if (t) {
+        targetTask = t
+        targetColumnId = col.id
+        break
+      }
+    }
+    if (!targetTask || !targetColumnId) return
+
+    const newPinned = !targetTask.pinned
+
+    // Check limit: max 3 pinned per column
+    if (newPinned) {
+      const col = board.columns.find((c) => c.id === targetColumnId)
+      const pinnedCount = col?.tasks.filter((t) => t.pinned).length || 0
+      if (pinnedCount >= 3) return
+    }
+
+    // Optimistic update
+    setBoard((prev) => ({
+      ...prev,
+      columns: prev.columns.map((col) => ({
+        ...col,
+        tasks: col.tasks.map((t) =>
+          t.id === taskId ? { ...t, pinned: newPinned } : t
+        ),
+      })),
+    }))
+
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned: newPinned }),
+      })
+    } catch (error) {
+      console.error('Failed to toggle pin:', error)
+      // Revert
+      setBoard((prev) => ({
+        ...prev,
+        columns: prev.columns.map((col) => ({
+          ...col,
+          tasks: col.tasks.map((t) =>
+            t.id === taskId ? { ...t, pinned: !newPinned } : t
+          ),
+        })),
+      }))
+    }
+  }
+
+  // Title/subtitle save
+  const handleSaveTitleSubtitle = async () => {
+    setSavingTitle(true)
+    try {
+      const response = await fetch(`/api/boards/${board.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: titleInput, subtitle: subtitleInput }),
+      })
+      if (response.ok) {
+        setBoard((prev) => ({ ...prev, title: titleInput, subtitle: subtitleInput }))
+      }
+    } catch (error) {
+      console.error('Failed to save title:', error)
+    } finally {
+      setSavingTitle(false)
+    }
+  }
+
+  // Memoize sorted columns with per-column sorting
   const sortedColumns = useMemo(
-    () => board.columns.map((col) => ({ ...col, tasks: sortTasksByPriority(col.tasks) })),
-    [board.columns]
+    () => board.columns.map((col) => ({
+      ...col,
+      tasks: sortTasks(col.tasks, columnSorts[col.id] || globalSort || undefined),
+    })),
+    [board.columns, columnSorts, globalSort]
   )
 
   return (
@@ -1092,8 +1300,8 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       <div className="flex items-center gap-2 px-4 sm:px-6 mb-4">
         {/* Settings button (opens dialog with user, JIRA, settings) */}
         <button
-          onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || ''); setJiraPatInput('') }}
-          className="p-2 sm:px-3 sm:py-1.5 text-xs bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 font-medium inline-flex items-center gap-1.5 shrink-0"
+          onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || ''); setJiraPatInput(''); setTitleInput(board.title); setSubtitleInput(board.subtitle || 'Drag tasks between columns to organize your work') }}
+          className="p-2 sm:px-3 sm:py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400 font-medium inline-flex items-center gap-1.5 shrink-0"
           aria-label="Settings"
         >
           <svg className="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1103,7 +1311,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
           <span className="hidden sm:inline">Settings</span>
         </button>
         {hasJiraPat && (
-          <span className="hidden sm:inline text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200 shrink-0">JIRA</span>
+          <span className="hidden sm:inline text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded font-medium border border-emerald-200 dark:border-emerald-800 shrink-0">JIRA</span>
         )}
 
         {/* Search field */}
@@ -1118,7 +1326,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               onChange={(e) => { setSearchQuery(e.target.value); setShowSearchResults(true) }}
               onFocus={() => { if (searchQuery.trim()) setShowSearchResults(true) }}
               placeholder="Search tasks..."
-              className="w-full pl-8 pr-8 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+              className="w-full pl-8 pr-8 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
             />
             {searchQuery && (
               <button
@@ -1162,24 +1370,117 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       {/* Board settings dialog (includes user, JIRA, settings) */}
       {showBoardSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={() => setShowBoardSettings(false)}>
-          <div className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-md mx-4 p-5 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl w-full max-w-md mx-4 p-5 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-gray-900">Settings</h3>
-              <button onClick={() => setShowBoardSettings(false)} className="text-gray-400 hover:text-gray-600 transition-colors p-1" aria-label="Close settings">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Settings</h3>
+              <button onClick={() => setShowBoardSettings(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1" aria-label="Close settings">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
+            {/* Dark Mode Toggle */}
+            <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+              <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Appearance</label>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">Dark Mode</span>
+                <button
+                  onClick={() => setDarkMode((v) => !v)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${darkMode ? 'bg-violet-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                  aria-label="Toggle dark mode"
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${darkMode ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Title & Subtitle */}
+            <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+              <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Board Title & Subtitle</label>
+              <div className="space-y-1.5 mb-3">
+                {TITLE_PRESETS.map((preset, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => { setTitleInput(preset.title); setSubtitleInput(preset.subtitle) }}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors border ${
+                      titleInput === preset.title && subtitleInput === preset.subtitle
+                        ? 'bg-violet-50 dark:bg-violet-900/30 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300'
+                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <div className="font-medium">{preset.title}</div>
+                    <div className="text-[10px] text-gray-400 dark:text-gray-500">{preset.subtitle}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  placeholder="Custom title…"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                />
+                <input
+                  type="text"
+                  value={subtitleInput}
+                  onChange={(e) => setSubtitleInput(e.target.value)}
+                  placeholder="Custom subtitle…"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                />
+                <button
+                  onClick={handleSaveTitleSubtitle}
+                  disabled={savingTitle}
+                  className="px-2.5 py-1 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors font-medium disabled:opacity-50 inline-flex items-center gap-1"
+                >
+                  {savingTitle && <Spinner size="sm" className="text-white" />}
+                  {savingTitle ? 'Saving…' : 'Save Title'}
+                </button>
+              </div>
+            </div>
+
+            {/* Global Sorting */}
+            <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+              <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Global Sorting</label>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-2">Apply the same sort to all columns. Per-column changes will disable this.</p>
+              <div className="flex items-center gap-2">
+                <select
+                  value={globalSort?.field || ''}
+                  onChange={(e) => {
+                    if (!e.target.value) {
+                      handleGlobalSortChange(null)
+                    } else {
+                      handleGlobalSortChange({ field: e.target.value as SortField, direction: globalSort?.direction || 'asc' })
+                    }
+                  }}
+                  className="flex-1 px-2 py-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                >
+                  <option value="">No global sort</option>
+                  <option value="priority">Criticality</option>
+                  <option value="createdAt">Date Added</option>
+                  <option value="endDate">Date Ended</option>
+                </select>
+                {globalSort && (
+                  <button
+                    onClick={() => handleGlobalSortChange({ ...globalSort, direction: globalSort.direction === 'asc' ? 'desc' : 'asc' })}
+                    className="p-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    title={globalSort.direction === 'asc' ? 'Ascending' : 'Descending'}
+                  >
+                    {globalSort.direction === 'asc' ? '↑' : '↓'}
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* User section */}
-            <div className="mb-4 pb-4 border-b border-gray-100">
-              <label className="block text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wider">User</label>
-              <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2 mb-2">
+            <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+              <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">User</label>
+              <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-2 mb-2">
                 <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
-                <span className="text-[10px] text-gray-500 font-mono select-all flex-1 truncate" title="Your user ID">{userId}</span>
+                <span className="text-[10px] text-gray-500 dark:text-gray-400 font-mono select-all flex-1 truncate" title="Your user ID">{userId}</span>
                 <button
                   onClick={handleCopyUserId}
                   className="text-gray-400 hover:text-violet-500 transition-colors shrink-0"
@@ -1206,14 +1507,14 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 </button>
               ) : (
                 <div className="mt-2">
-                  <p className="text-[10px] text-gray-400 mb-2">Enter a known user ID to load their board on this device.</p>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-2">Enter a known user ID to load their board on this device.</p>
                   <input
                     type="text"
                     value={userIdInput}
                     onChange={(e) => setUserIdInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleSwitchSession() }}
                     placeholder="Paste user ID here…"
-                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-2 font-mono"
+                    className="w-full px-2.5 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-2 font-mono"
                     autoFocus
                   />
                   {sessionError && (
@@ -1230,7 +1531,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                     </button>
                     <button
                       onClick={() => { setShowUserIdInput(false); setSessionError('') }}
-                      className="px-2.5 py-1 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors"
+                      className="px-2.5 py-1 text-gray-500 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-xs transition-colors"
                     >
                       Cancel
                     </button>
@@ -1242,31 +1543,31 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             {/* JIRA Integration */}
             <div className="space-y-3">
               <div className="flex items-center gap-2 mb-1">
-                <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider">JIRA Integration</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">JIRA Integration</label>
                 {hasJiraPat && (
-                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200">Connected</span>
+                  <span className="text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded font-medium border border-emerald-200 dark:border-emerald-800">Connected</span>
                 )}
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">JIRA Base URL</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">JIRA Base URL</label>
                 <input
                   type="text"
                   value={jiraUrlInput}
                   onChange={(e) => setJiraUrlInput(e.target.value)}
                   placeholder="https://yourorg.atlassian.net/browse/"
-                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                  className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">JIRA PAT</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">JIRA PAT</label>
                 <input
                   type="password"
                   value={jiraPatInput}
                   onChange={(e) => setJiraPatInput(e.target.value)}
                   placeholder={hasJiraPat ? '••••••••  (configured)' : 'Enter PAT…'}
-                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                  className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
                 />
               </div>
 
@@ -1314,6 +1615,9 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 onViewTask={openTaskModal}
                 onUpdateColumn={handleUpdateColumn}
                 onDeleteColumn={handleDeleteColumn}
+                onTogglePin={handleTogglePin}
+                onSortChange={handleColumnSortChange}
+                sortConfig={columnSorts[column.id] || globalSort || undefined}
                 isOver={activeColumnId === column.id}
               />
             ))}
@@ -1321,23 +1625,23 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
           {/* Add column */}
           <div className="shrink-0 w-72">
             {showAddColumn ? (
-              <form onSubmit={handleAddColumn} className="bg-white rounded-xl p-3 border border-gray-200 shadow-sm relative">
+              <form onSubmit={handleAddColumn} className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
                 {addingColumn && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-xl">
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 dark:bg-gray-800/80 rounded-xl">
                     <Spinner size="md" className="text-violet-500" />
                   </div>
                 )}
-                <h4 className="text-xs font-bold text-gray-800 mb-2 uppercase tracking-wider">New Column</h4>
+                <h4 className="text-xs font-bold text-gray-800 dark:text-gray-200 mb-2 uppercase tracking-wider">New Column</h4>
                 <input
                   type="text"
                   value={newColTitle}
                   onChange={(e) => setNewColTitle(e.target.value)}
                   placeholder="Column title…"
                   disabled={addingColumn}
-                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-2"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-2"
                   autoFocus
                 />
-                <div className="flex items-center gap-3 mb-2 text-[10px] text-gray-600">
+                <div className="flex items-center gap-3 mb-2 text-[10px] text-gray-600 dark:text-gray-400">
                   <label className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="checkbox"
@@ -1369,7 +1673,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                     type="button"
                     disabled={addingColumn}
                     onClick={() => { setShowAddColumn(false); setNewColTitle(''); setNewColIsStart(false); setNewColIsEnd(false) }}
-                    className="px-2.5 py-1 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors"
+                    className="px-2.5 py-1 text-gray-500 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-xs transition-colors"
                   >
                     Cancel
                   </button>
@@ -1378,7 +1682,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             ) : (
               <button
                 onClick={() => setShowAddColumn(true)}
-                className="w-full py-2.5 bg-white/50 border border-dashed border-gray-300 rounded-xl text-gray-400 hover:bg-white hover:text-gray-600 hover:border-gray-400 transition-all text-xs font-medium"
+                className="w-full py-2.5 bg-white/50 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-gray-400 hover:bg-white dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 transition-all text-xs font-medium"
               >
                 + Add Column
               </button>
@@ -1389,7 +1693,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
         <DragOverlay dropAnimation={null}>
           {activeTask ? <TaskCard task={activeTask} isDragging isOverlay /> : null}
           {activeColumn ? (
-            <div className="w-72 h-[calc(100vh-8rem)] rounded-xl bg-gray-50/80 shadow-xl ring-2 ring-violet-300/50 rotate-[1.5deg] scale-[1.02] opacity-90">
+            <div className="w-72 h-[calc(100vh-8rem)] rounded-xl bg-gray-50/80 dark:bg-gray-800/80 shadow-xl ring-2 ring-violet-300/50 rotate-[1.5deg] scale-[1.02] opacity-90">
               <KanbanColumn
                 column={activeColumn}
                 onAddTask={noop}
@@ -1398,6 +1702,8 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 onViewTask={noop}
                 onUpdateColumn={noop}
                 onDeleteColumn={noop}
+                onTogglePin={noop}
+                onSortChange={noop}
                 isOverlay
               />
             </div>
