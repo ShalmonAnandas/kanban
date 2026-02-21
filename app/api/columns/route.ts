@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getUserId } from '@/lib/session'
+import { getRandomPastelColor } from '@/lib/colors'
 
 export async function POST(request: Request) {
   try {
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
         order: (lastColumn?.order ?? -1) + 1,
         isStart: isStart ?? false,
         isEnd: isEnd ?? false,
+        color: getRandomPastelColor(),
       },
     })
 

@@ -58,6 +58,7 @@ export type Column = {
   id: string
   title: string
   order: number
+  color: string | null
   isStart: boolean
   isEnd: boolean
   boardId: string
@@ -139,7 +140,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null)
 
   // Editor mode toggle
-  const [editorMode, setEditorMode] = useState<'markdown' | 'rich'>('markdown')
+  const [editorMode, setEditorMode] = useState<'markdown' | 'rich'>('rich')
 
   // Subtask state
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
@@ -158,6 +159,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   const [addTaskImages, setAddTaskImages] = useState<string[]>([])
   const [creatingTask, setCreatingTask] = useState(false)
   const [addTaskUploadingImage, setAddTaskUploadingImage] = useState(false)
+  const [addTaskEditorMode, setAddTaskEditorMode] = useState<'markdown' | 'rich'>('rich')
 
   // Global loading for reorder
   const [reordering, setReordering] = useState(false)
@@ -225,18 +227,18 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [showSearchResults])
 
-  // Search results
+  // Search results (with column color)
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return []
     const query = searchQuery.toLowerCase()
-    const results: Task[] = []
+    const results: (Task & { columnColor?: string | null })[] = []
     for (const col of board.columns) {
       for (const task of col.tasks) {
         const titleMatch = task.title.toLowerCase().includes(query)
         const descMatch = task.description?.toLowerCase().includes(query)
         const subtaskMatch = task.subtasks?.some(st => st.title.toLowerCase().includes(query))
         if (titleMatch || descMatch || subtaskMatch) {
-          results.push(task)
+          results.push({ ...task, columnColor: col.color })
         }
       }
     }
@@ -1087,25 +1089,25 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   return (
     <>
       {/* Header actions */}
-      <div className="flex items-center justify-between px-6 mb-4">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || ''); setJiraPatInput('') }}
-            className="px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 font-medium inline-flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Settings
-          </button>
-          {hasJiraPat && (
-            <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200">JIRA</span>
-          )}
-        </div>
+      <div className="flex items-center gap-2 px-4 sm:px-6 mb-4">
+        {/* Settings button (opens dialog with user, JIRA, settings) */}
+        <button
+          onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || ''); setJiraPatInput('') }}
+          className="p-2 sm:px-3 sm:py-1.5 text-xs bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 font-medium inline-flex items-center gap-1.5 shrink-0"
+          aria-label="Settings"
+        >
+          <svg className="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span className="hidden sm:inline">Settings</span>
+        </button>
+        {hasJiraPat && (
+          <span className="hidden sm:inline text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200 shrink-0">JIRA</span>
+        )}
 
         {/* Search field */}
-        <div className="relative flex-1 max-w-md mx-4" ref={searchRef}>
+        <div className="relative flex-1 min-w-0" ref={searchRef}>
           <div className="relative">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1139,6 +1141,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                     key={task.id}
                     onClick={() => { openTaskModal(task); setShowSearchResults(false) }}
                     className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
+                    style={task.columnColor ? { borderLeftWidth: '4px', borderLeftColor: task.columnColor } : undefined}
                   >
                     <div className="text-xs font-medium text-gray-800 truncate">{task.title}</div>
                     {task.description && (
@@ -1155,121 +1158,128 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             </div>
           )}
         </div>
+      </div>
+      {/* Board settings dialog (includes user, JIRA, settings) */}
+      {showBoardSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={() => setShowBoardSettings(false)}>
+          <div className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-md mx-4 p-5 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-gray-900">Settings</h3>
+              <button onClick={() => setShowBoardSettings(false)} className="text-gray-400 hover:text-gray-600 transition-colors p-1" aria-label="Close settings">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
-        {/* User Identifier */}
-        <div className="relative flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5">
-            <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            <span className="text-[10px] text-gray-500 font-mono select-all" title="Your user ID">{userId}</span>
-            <button
-              onClick={handleCopyUserId}
-              className="text-gray-400 hover:text-violet-500 transition-colors"
-              aria-label="Copy user ID"
-              title="Copy user ID"
-            >
-              {copied ? (
-                <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            {/* User section */}
+            <div className="mb-4 pb-4 border-b border-gray-100">
+              <label className="block text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wider">User</label>
+              <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2 mb-2">
+                <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
-              ) : (
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              )}
-            </button>
-            <button
-              onClick={() => { setShowUserIdInput((v) => !v); setUserIdInput(''); setSessionError('') }}
-              className="text-gray-400 hover:text-violet-500 transition-colors"
-              aria-label="Switch user session"
-              title="Switch session"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
-          </div>
-          {showUserIdInput && (
-            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-72">
-              <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Enter User ID</label>
-              <p className="text-[10px] text-gray-400 mb-2">Enter a known user ID to load their board on this device.</p>
-              <input
-                type="text"
-                value={userIdInput}
-                onChange={(e) => setUserIdInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSwitchSession() }}
-                placeholder="Paste user ID here…"
-                className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-2 font-mono"
-                autoFocus
-              />
-              {sessionError && (
-                <p className="text-[10px] text-red-500 mb-2">{sessionError}</p>
-              )}
-              <div className="flex gap-1.5">
+                <span className="text-[10px] text-gray-500 font-mono select-all flex-1 truncate" title="Your user ID">{userId}</span>
                 <button
-                  onClick={handleSwitchSession}
-                  disabled={switchingSession || !userIdInput.trim()}
-                  className="px-2.5 py-1 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors font-medium disabled:opacity-50 inline-flex items-center gap-1"
+                  onClick={handleCopyUserId}
+                  className="text-gray-400 hover:text-violet-500 transition-colors shrink-0"
+                  aria-label="Copy user ID"
+                  title="Copy user ID"
                 >
-                  {switchingSession && <Spinner size="sm" className="text-white" />}
-                  {switchingSession ? 'Switching…' : 'Switch'}
-                </button>
-                <button
-                  onClick={() => { setShowUserIdInput(false); setSessionError('') }}
-                  className="px-2.5 py-1 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors"
-                >
-                  Cancel
+                  {copied ? (
+                    <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  )}
                 </button>
               </div>
+              {!showUserIdInput ? (
+                <button
+                  onClick={() => { setShowUserIdInput(true); setUserIdInput(''); setSessionError('') }}
+                  className="text-xs text-violet-500 hover:text-violet-700 font-medium transition-colors"
+                >
+                  Switch session
+                </button>
+              ) : (
+                <div className="mt-2">
+                  <p className="text-[10px] text-gray-400 mb-2">Enter a known user ID to load their board on this device.</p>
+                  <input
+                    type="text"
+                    value={userIdInput}
+                    onChange={(e) => setUserIdInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSwitchSession() }}
+                    placeholder="Paste user ID here…"
+                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-2 font-mono"
+                    autoFocus
+                  />
+                  {sessionError && (
+                    <p className="text-[10px] text-red-500 mb-2">{sessionError}</p>
+                  )}
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={handleSwitchSession}
+                      disabled={switchingSession || !userIdInput.trim()}
+                      className="px-2.5 py-1 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors font-medium disabled:opacity-50 inline-flex items-center gap-1"
+                    >
+                      {switchingSession && <Spinner size="sm" className="text-white" />}
+                      {switchingSession ? 'Switching…' : 'Switch'}
+                    </button>
+                    <button
+                      onClick={() => { setShowUserIdInput(false); setSessionError('') }}
+                      className="px-2.5 py-1 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Board settings panel */}
-      {showBoardSettings && (
-        <div className="mx-6 mb-4 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
-          <h3 className="text-xs font-bold text-gray-800 mb-3 uppercase tracking-wider">Board Settings</h3>
+            {/* JIRA Integration */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider">JIRA Integration</label>
+                {hasJiraPat && (
+                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200">Connected</span>
+                )}
+              </div>
 
-          <div className="space-y-3">
-            <div>
-              <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">JIRA Base URL</label>
-              <input
-                type="text"
-                value={jiraUrlInput}
-                onChange={(e) => setJiraUrlInput(e.target.value)}
-                placeholder="https://yourorg.atlassian.net/browse/"
-                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
-              />
-            </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">JIRA Base URL</label>
+                <input
+                  type="text"
+                  value={jiraUrlInput}
+                  onChange={(e) => setJiraUrlInput(e.target.value)}
+                  placeholder="https://yourorg.atlassian.net/browse/"
+                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                />
+              </div>
 
-            <div>
-              <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">JIRA PAT</label>
-              <input
-                type="password"
-                value={jiraPatInput}
-                onChange={(e) => setJiraPatInput(e.target.value)}
-                placeholder={hasJiraPat ? '••••••••  (configured)' : 'Enter PAT…'}
-                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
-              />
-            </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">JIRA PAT</label>
+                <input
+                  type="password"
+                  value={jiraPatInput}
+                  onChange={(e) => setJiraPatInput(e.target.value)}
+                  placeholder={hasJiraPat ? '••••••••  (configured)' : 'Enter PAT…'}
+                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                />
+              </div>
 
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={handleSaveJiraSettings}
-                disabled={savingJira}
-                className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
-              >
-                {savingJira && <Spinner size="sm" className="text-white" />}
-                {savingJira ? 'Saving…' : 'Save'}
-              </button>
-              <button
-                onClick={() => setShowBoardSettings(false)}
-                className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors"
-              >
-                Close
-              </button>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={handleSaveJiraSettings}
+                  disabled={savingJira}
+                  className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
+                >
+                  {savingJira && <Spinner size="sm" className="text-white" />}
+                  {savingJira ? 'Saving…' : 'Save JIRA Settings'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1529,17 +1539,17 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   <div className="flex items-center gap-1 bg-gray-100 rounded-md p-0.5">
                     <button
                       type="button"
-                      onClick={() => setEditorMode('markdown')}
-                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${editorMode === 'markdown' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      Markdown
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => setEditorMode('rich')}
                       className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${editorMode === 'rich' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                     >
                       Rich
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorMode('markdown')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${editorMode === 'markdown' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Markdown
                     </button>
                   </div>
                 </div>
@@ -1673,14 +1683,42 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               autoFocus
             />
 
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Description</label>
-            <textarea
-              value={addTaskDescription}
-              onChange={(e) => setAddTaskDescription(e.target.value)}
-              rows={4}
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
-              placeholder="Add a description (supports markdown)..."
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Description</label>
+              <div className="flex items-center gap-1 bg-gray-100 rounded-md p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setAddTaskEditorMode('rich')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${addTaskEditorMode === 'rich' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Rich
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddTaskEditorMode('markdown')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${addTaskEditorMode === 'markdown' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Markdown
+                </button>
+              </div>
+            </div>
+            {addTaskEditorMode === 'markdown' ? (
+              <textarea
+                value={addTaskDescription}
+                onChange={(e) => setAddTaskDescription(e.target.value)}
+                rows={4}
+                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
+                placeholder="Add a description (supports markdown)..."
+              />
+            ) : (
+              <div className="mb-3">
+                <RichEditor
+                  content={addTaskDescription}
+                  onChange={setAddTaskDescription}
+                  placeholder="Add a description..."
+                />
+              </div>
+            )}
 
             <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
             <select

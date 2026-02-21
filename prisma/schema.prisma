@@ -39,6 +39,7 @@ model Column {
   id        String   @id @default(cuid())
   title     String
   order     Int
+  color     String?
   isStart   Boolean  @default(false)
   isEnd     Boolean  @default(false)
   boardId   String
