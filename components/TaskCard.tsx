@@ -99,7 +99,9 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
               {task.priority.replace('_', ' ')}
             </span>
             {task.pinned && (
-              <span className="text-[10px] text-amber-600 dark:text-amber-400" title="Pinned">📌</span>
+              <svg className="w-3 h-3 text-amber-500 dark:text-amber-400 shrink-0" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24" aria-label="Pinned" role="img">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
             )}
           </div>
           <h4 className="text-[13px] font-medium text-gray-800 dark:text-gray-200 break-words leading-snug">

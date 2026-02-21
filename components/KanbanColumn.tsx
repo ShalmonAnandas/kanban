@@ -12,15 +12,16 @@ import { TaskCard } from './TaskCard'
 import { Column, Task, SortConfig, SortField } from './KanbanBoard'
 import { PASTEL_COLORS } from '@/lib/colors'
 
-// Convert hex color to pastel version
+// Convert hex color to pastel version by mixing with white
+const PASTEL_MIX_RATIO = 0.6
+
 function toPastel(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16)
   const g = parseInt(hex.slice(3, 5), 16)
   const b = parseInt(hex.slice(5, 7), 16)
-  // Mix with white to create pastel
-  const pr = Math.round(r + (255 - r) * 0.6)
-  const pg = Math.round(g + (255 - g) * 0.6)
-  const pb = Math.round(b + (255 - b) * 0.6)
+  const pr = Math.round(r + (255 - r) * PASTEL_MIX_RATIO)
+  const pg = Math.round(g + (255 - g) * PASTEL_MIX_RATIO)
+  const pb = Math.round(b + (255 - b) * PASTEL_MIX_RATIO)
   return `#${pr.toString(16).padStart(2, '0')}${pg.toString(16).padStart(2, '0')}${pb.toString(16).padStart(2, '0')}`
 }
 

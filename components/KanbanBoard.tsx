@@ -1340,7 +1340,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             )}
           </div>
           {showSearchResults && searchQuery.trim() && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
               {searchResults.length === 0 ? (
                 <div className="px-3 py-4 text-xs text-gray-400 text-center">No tasks found</div>
               ) : (
@@ -1348,10 +1348,10 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   <button
                     key={task.id}
                     onClick={() => { openTaskModal(task); setShowSearchResults(false) }}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-b-0"
                     style={task.columnColor ? { borderLeftWidth: '4px', borderLeftColor: task.columnColor } : undefined}
                   >
-                    <div className="text-xs font-medium text-gray-800 truncate">{task.title}</div>
+                    <div className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{task.title}</div>
                     {task.description && (
                       <div className="text-[10px] text-gray-400 truncate mt-0.5">{task.description.slice(0, 100)}</div>
                     )}
@@ -1390,7 +1390,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${darkMode ? 'bg-violet-500' : 'bg-gray-300 dark:bg-gray-600'}`}
                   aria-label="Toggle dark mode"
                 >
-                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${darkMode ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${darkMode ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </button>
               </div>
             </div>
@@ -1589,9 +1589,9 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       {/* Non-intrusive saving toast (top right) */}
       {reordering && (
         <div className="fixed top-4 right-4 z-50 pointer-events-none" role="status" aria-live="polite">
-          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-lg">
+          <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-lg">
             <Spinner size="sm" className="text-violet-500" />
-            <span className="text-xs text-gray-700 font-medium">Saving…</span>
+            <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">Saving…</span>
           </div>
         </div>
       )}
@@ -1715,13 +1715,13 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       {selectedTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="task-modal-title" onClick={closeTaskModal}>
           <div
-            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto"
+            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {taskModalMode === 'view' ? (
               <>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 id="task-modal-title" className="text-sm font-bold text-gray-900">Task Details</h2>
+                  <h2 id="task-modal-title" className="text-sm font-bold text-gray-900 dark:text-gray-100">Task Details</h2>
                   <button
                     onClick={() => setTaskModalMode('edit')}
                     className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors font-medium inline-flex items-center gap-1.5"
@@ -1974,10 +1974,10 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       {addTaskColumnId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="add-task-modal-title" onClick={closeAddTaskModal}>
           <div
-            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto"
+            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="add-task-modal-title" className="text-sm font-bold text-gray-900 mb-4">Add Task</h2>
+            <h2 id="add-task-modal-title" className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4">Add Task</h2>
 
             <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
             <input
