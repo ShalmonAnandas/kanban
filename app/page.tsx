@@ -30,6 +30,7 @@ export default async function Home() {
         },
       },
     },
+    cacheStrategy: { ttl: 30, swr: 60 },
   })
 
   // Create default board if none exists
