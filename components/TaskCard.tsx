@@ -111,11 +111,19 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
               <span className="text-[10px] text-gray-400">{task.images.length}</span>
             </div>
           )}
+          {task.subtasks && task.subtasks.length > 0 && (
+            <div className="flex items-center gap-1 mt-1.5">
+              <svg className="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              <span className="text-[10px] text-gray-400">{task.subtasks.filter(st => st.done).length}/{task.subtasks.length}</span>
+            </div>
+          )}
           {(task.startDate || task.endDate) && (
             <div className="flex items-center gap-2 mt-2 text-[10px] text-gray-400 font-medium">
-              {task.startDate && <span className="bg-gray-50 px-1.5 py-0.5 rounded">📅 {formatDate(task.startDate)}</span>}
+              {task.startDate && <span className="bg-gray-50 px-1.5 py-0.5 rounded">{formatDate(task.startDate)}</span>}
               {task.startDate && task.endDate && <span className="text-gray-300">→</span>}
-              {task.endDate && <span className="bg-gray-50 px-1.5 py-0.5 rounded">🏁 {formatDate(task.endDate)}</span>}
+              {task.endDate && <span className="bg-gray-50 px-1.5 py-0.5 rounded">{formatDate(task.endDate)}</span>}
             </div>
           )}
         </div>

@@ -62,9 +62,24 @@ model Task {
   startDate   DateTime?
   endDate     DateTime?
   images      String[]  @default([])
+  subtasks    SubTask[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([columnId])
   @@map("tasks")
+}
+
+model SubTask {
+  id        String   @id @default(cuid())
+  title     String
+  done      Boolean  @default(false)
+  order     Int
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
+  @@map("subtasks")
 }

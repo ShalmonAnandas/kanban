@@ -20,6 +20,11 @@ export default async function Home() {
         include: {
           tasks: {
             orderBy: { order: 'asc' },
+            include: {
+              subtasks: {
+                orderBy: { order: 'asc' },
+              },
+            },
           },
         },
       },
@@ -46,6 +51,11 @@ export default async function Home() {
           include: {
             tasks: {
               orderBy: { order: 'asc' },
+              include: {
+                subtasks: {
+                  orderBy: { order: 'asc' },
+                },
+              },
             },
           },
         },
@@ -70,6 +80,11 @@ export default async function Home() {
         endDate: task.endDate ? task.endDate.toISOString() : null,
         createdAt: task.createdAt.toISOString(),
         updatedAt: task.updatedAt.toISOString(),
+        subtasks: (task.subtasks || []).map((st: typeof task.subtasks[number]) => ({
+          ...st,
+          createdAt: st.createdAt.toISOString(),
+          updatedAt: st.updatedAt.toISOString(),
+        })),
       })),
     })),
   }
