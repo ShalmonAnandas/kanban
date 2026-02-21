@@ -10,6 +10,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { TaskCard } from './TaskCard'
 import { Column, Task } from './KanbanBoard'
+import { PASTEL_COLORS } from '@/lib/colors'
 
 type KanbanColumnProps = {
   column: Column
@@ -38,6 +39,7 @@ export function KanbanColumn({
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(column.title)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showColorPicker, setShowColorPicker] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const { setNodeRef: setDroppableRef, isOver: isDroppableOver } = useDroppable({
@@ -62,6 +64,7 @@ export function KanbanColumn({
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowMenu(false)
         setConfirmDelete(false)
+        setShowColorPicker(false)
       }
     }
     if (showMenu) document.addEventListener('mousedown', handleClick)
@@ -193,6 +196,35 @@ export function KanbanColumn({
                 >
                   {column.isEnd ? 'Unset End' : 'Set as End'}
                 </button>
+                <button
+                  onClick={() => setShowColorPicker((v) => !v)}
+                  className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-gray-700 transition-colors flex items-center gap-2"
+                >
+                  <span
+                    className="inline-block w-3 h-3 rounded-full border border-gray-300 shrink-0"
+                    style={{ backgroundColor: column.color || '#ccc' }}
+                  />
+                  Change Color
+                </button>
+                {showColorPicker && (
+                  <div className="px-3 py-2 grid grid-cols-4 gap-1.5">
+                    {PASTEL_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => {
+                          onUpdateColumn(column.id, { color })
+                          setShowColorPicker(false)
+                          setShowMenu(false)
+                        }}
+                        className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                          column.color === color ? 'border-gray-700 ring-1 ring-gray-400' : 'border-gray-200'
+                        }`}
+                        style={{ backgroundColor: color }}
+                        aria-label={`Set column color to ${color}`}
+                      />
+                    ))}
+                  </div>
+                )}
                 <hr className="my-1 border-gray-100" />
                 <button
                   onClick={handleDelete}

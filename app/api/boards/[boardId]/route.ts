@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getUserId } from '@/lib/session'
 import { MASKED_PAT } from '@/lib/constants'
+import { backfillColumnColors } from '@/lib/backfillColumnColors'
 
 type Params = Promise<{ boardId: string }>
 
@@ -13,7 +14,7 @@ export async function GET(
     const { boardId } = await params
     const userId = await getUserId()
     
-    const board = await prisma.board.findFirst({
+    let board = await prisma.board.findFirst({
       where: {
         id: boardId,
         userId,
@@ -35,6 +36,30 @@ export async function GET(
         { error: 'Board not found' },
         { status: 404 }
       )
+    }
+
+    // Backfill colors for any columns that don't have one
+    if (board.columns.some((c: { color: string | null }) => !c.color)) {
+      await backfillColumnColors([board.id])
+      board = await prisma.board.findFirst({
+        where: { id: boardId, userId },
+        include: {
+          columns: {
+            orderBy: { order: 'asc' },
+            include: {
+              tasks: {
+                orderBy: { order: 'asc' },
+              },
+            },
+          },
+        },
+      })
+      if (!board) {
+        return NextResponse.json(
+          { error: 'Board not found' },
+          { status: 404 }
+        )
+      }
     }
     
     // Mask the PAT before returning to client
