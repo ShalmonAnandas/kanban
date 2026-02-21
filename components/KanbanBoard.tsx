@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Image from 'next/image'
 import {
   DndContext,
@@ -900,6 +900,12 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
 
   const noop = useCallback(() => {}, [])
 
+  // Memoize priority-sorted columns to avoid re-sorting on every render
+  const sortedColumns = useMemo(
+    () => board.columns.map((col) => ({ ...col, tasks: sortTasksByPriority(col.tasks) })),
+    [board.columns]
+  )
+
   return (
     <>
       {/* Header actions */}
@@ -1058,10 +1064,10 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       >
         <SortableContext items={board.columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
           <div className="flex gap-3 overflow-x-auto pb-4 px-6 items-start">
-            {board.columns.map((column) => (
+            {sortedColumns.map((column) => (
               <KanbanColumn
                 key={column.id}
-                column={{ ...column, tasks: sortTasksByPriority(column.tasks) }}
+                column={column}
                 onAddTask={openAddTaskModal}
                 onDeleteTask={handleDeleteTask}
                 onEditTask={openTaskEditMode}
