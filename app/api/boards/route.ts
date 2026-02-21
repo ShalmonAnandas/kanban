@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getUserId } from '@/lib/session'
+import { backfillColumnColors } from '@/lib/backfillColumnColors'
 
 export async function GET() {
   try {
     const userId = await getUserId()
     
-    const boards = await prisma.board.findMany({
+    let boards = await prisma.board.findMany({
       where: { userId },
       include: {
         columns: {
@@ -20,6 +21,28 @@ export async function GET() {
       },
       orderBy: { createdAt: 'desc' },
     })
+
+    // Backfill colors for any columns that don't have one
+    const boardsWithMissing = boards.filter((b: { id: string; columns: { color: string | null }[] }) =>
+      b.columns.some((c) => !c.color)
+    )
+    if (boardsWithMissing.length > 0) {
+      await backfillColumnColors(boardsWithMissing.map((b: { id: string }) => b.id))
+      boards = await prisma.board.findMany({
+        where: { userId },
+        include: {
+          columns: {
+            orderBy: { order: 'asc' },
+            include: {
+              tasks: {
+                orderBy: { order: 'asc' },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+    }
     
     return NextResponse.json(boards)
   } catch (error) {
