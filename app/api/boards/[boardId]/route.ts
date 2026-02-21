@@ -139,6 +139,7 @@ export async function PATCH(
       where: { id: boardId },
       data: {
         ...(body.title !== undefined && { title: body.title }),
+        ...(body.subtitle !== undefined && { subtitle: body.subtitle }),
         ...(body.jiraBaseUrl !== undefined && { jiraBaseUrl: body.jiraBaseUrl }),
         ...(body.jiraPat !== undefined && { jiraPat: body.jiraPat }),
       },

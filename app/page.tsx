@@ -67,6 +67,7 @@ export default async function Home() {
   // Serialize dates to strings for client component
   const board: Board = {
     ...boardData,
+    subtitle: boardData.subtitle || null,
     jiraBaseUrl: boardData.jiraBaseUrl || null,
     jiraPat: boardData.jiraPat ? MASKED_PAT : null,
     createdAt: boardData.createdAt.toISOString(),
@@ -77,6 +78,7 @@ export default async function Home() {
       updatedAt: col.updatedAt.toISOString(),
       tasks: col.tasks.map((task: typeof col.tasks[number]) => ({
         ...task,
+        pinned: (task as typeof task & { pinned?: boolean }).pinned ?? false,
         startDate: task.startDate ? task.startDate.toISOString() : null,
         endDate: task.endDate ? task.endDate.toISOString() : null,
         createdAt: task.createdAt.toISOString(),
@@ -90,17 +92,20 @@ export default async function Home() {
     })),
   }
 
+  const displayTitle = board.title || 'My Kanban Board'
+  const displaySubtitle = board.subtitle || 'Drag tasks between columns to organize your work'
+
   return (
-    <div className="min-h-screen bg-[#f5f5f7]">
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/60 sticky top-0 z-40">
+    <div className="min-h-screen bg-[#f5f5f7] dark:bg-gray-950">
+      <header className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200/60 dark:border-gray-800/60 sticky top-0 z-40">
         <div className="max-w-full mx-auto px-6 py-3 flex items-center gap-3">
           <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-violet-600 text-white font-bold text-sm shadow-sm">
             K
           </div>
           <div>
-            <h1 className="text-sm font-bold text-gray-900 tracking-tight">{board.title}</h1>
-            <p className="text-[10px] text-gray-400">
-              Drag tasks between columns to organize your work
+            <h1 className="text-sm font-bold text-gray-900 dark:text-gray-100 tracking-tight">{displayTitle}</h1>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">
+              {displaySubtitle}
             </p>
           </div>
         </div>

@@ -5,11 +5,11 @@ import { CSS } from '@dnd-kit/utilities'
 import { Task } from './KanbanBoard'
 
 const PRIORITY_CONFIG: Record<string, { dot: string; badge: string; accent: string }> = {
-  critical: { dot: 'bg-red-500', badge: 'bg-red-50 text-red-700 border border-red-200', accent: 'border-l-red-500' },
-  high: { dot: 'bg-orange-500', badge: 'bg-orange-50 text-orange-700 border border-orange-200', accent: 'border-l-orange-400' },
-  medium: { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700 border border-blue-200', accent: 'border-l-blue-400' },
-  low: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', accent: 'border-l-emerald-400' },
-  nice_to_have: { dot: 'bg-gray-400', badge: 'bg-gray-50 text-gray-600 border border-gray-200', accent: 'border-l-gray-300' },
+  critical: { dot: 'bg-red-500', badge: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800', accent: 'border-l-red-500' },
+  high: { dot: 'bg-orange-500', badge: 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800', accent: 'border-l-orange-400' },
+  medium: { dot: 'bg-blue-500', badge: 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800', accent: 'border-l-blue-400' },
+  low: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800', accent: 'border-l-emerald-400' },
+  nice_to_have: { dot: 'bg-gray-400', badge: 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600', accent: 'border-l-gray-300 dark:border-l-gray-600' },
 }
 
 function formatDate(iso: string): string {
@@ -32,7 +32,7 @@ function renderTitle(title: string) {
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="text-violet-600 hover:text-violet-800 hover:underline font-medium"
+          className="text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 hover:underline font-medium"
         >
           {match[1]}
         </a>
@@ -49,9 +49,11 @@ type TaskCardProps = {
   onDelete?: () => void
   onEdit?: (task: Task) => void
   onView?: (task: Task) => void
+  onTogglePin?: () => void
+  pinnedCount?: number
 }
 
-export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView }: TaskCardProps) {
+export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView, onTogglePin, pinnedCount = 0 }: TaskCardProps) {
   const sortable = useSortable({ id: task.id, disabled: isOverlay })
 
   const style = isOverlay
@@ -70,6 +72,8 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
     }
   }
 
+  const canPin = task.pinned || pinnedCount < 3
+
   return (
     <div
       ref={isOverlay ? undefined : sortable.setNodeRef}
@@ -77,12 +81,14 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
       {...(isOverlay ? {} : sortable.attributes)}
       {...(isOverlay ? {} : sortable.listeners)}
       onClick={handleCardClick}
-      className={`bg-white rounded-lg p-3 border border-gray-200/80 border-l-[3px] ${priority.accent} group select-none ${
+      className={`bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200/80 dark:border-gray-700/80 border-l-[3px] ${priority.accent} group select-none ${
+        task.pinned ? 'ring-1 ring-amber-300/50 dark:ring-amber-600/50' : ''
+      } ${
         isDragging || isOverlay
           ? 'shadow-xl ring-2 ring-violet-300/50 rotate-[1.5deg] scale-[1.02]'
           : sortable.isDragging
             ? 'opacity-40'
-            : 'shadow-sm hover:shadow-md hover:border-gray-300/80 cursor-grab active:cursor-grabbing'
+            : 'shadow-sm hover:shadow-md hover:border-gray-300/80 dark:hover:border-gray-600/80 cursor-grab active:cursor-grabbing'
       } transition-shadow duration-150`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -92,12 +98,17 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
             <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${priority.badge}`}>
               {task.priority.replace('_', ' ')}
             </span>
+            {task.pinned && (
+              <svg className="w-3 h-3 text-amber-500 dark:text-amber-400 shrink-0" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24" aria-label="Pinned" role="img">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            )}
           </div>
-          <h4 className="text-[13px] font-medium text-gray-800 break-words leading-snug">
+          <h4 className="text-[13px] font-medium text-gray-800 dark:text-gray-200 break-words leading-snug">
             {renderTitle(task.title)}
           </h4>
           {task.description && (
-            <p className="text-xs text-gray-400 mt-1.5 line-clamp-2 break-words leading-relaxed">
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 line-clamp-2 break-words leading-relaxed">
               {task.description.length > 80
                 ? task.description.slice(0, 80) + '…'
                 : task.description}
@@ -121,14 +132,29 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
           )}
           {(task.startDate || task.endDate) && (
             <div className="flex items-center gap-2 mt-2 text-[10px] text-gray-400 font-medium">
-              {task.startDate && <span className="bg-gray-50 px-1.5 py-0.5 rounded">{formatDate(task.startDate)}</span>}
-              {task.startDate && task.endDate && <span className="text-gray-300">→</span>}
-              {task.endDate && <span className="bg-gray-50 px-1.5 py-0.5 rounded">{formatDate(task.endDate)}</span>}
+              {task.startDate && <span className="bg-gray-50 dark:bg-gray-700 px-1.5 py-0.5 rounded">{formatDate(task.startDate)}</span>}
+              {task.startDate && task.endDate && <span className="text-gray-300 dark:text-gray-600">→</span>}
+              {task.endDate && <span className="bg-gray-50 dark:bg-gray-700 px-1.5 py-0.5 rounded">{formatDate(task.endDate)}</span>}
             </div>
           )}
         </div>
         {!isDragging && !isOverlay && (
           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+            {onTogglePin && canPin && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTogglePin()
+                }}
+                className={`transition-colors p-0.5 ${task.pinned ? 'text-amber-500 hover:text-amber-600' : 'text-gray-300 hover:text-amber-500'}`}
+                aria-label={task.pinned ? 'Unpin task' : 'Pin task'}
+                title={task.pinned ? 'Unpin' : pinnedCount >= 3 ? 'Max 3 pinned' : 'Pin to top'}
+              >
+                <svg className="w-3.5 h-3.5" fill={task.pinned ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              </button>
+            )}
             {onEdit && (
               <button
                 onClick={(e) => {
