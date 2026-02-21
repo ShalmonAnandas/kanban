@@ -172,6 +172,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       },
     }),
     useSensor(TouchSensor, {
+      // 300ms delay allows distinguishing between scroll and drag on touch devices
       activationConstraint: {
         delay: 300,
         tolerance: 5,
@@ -274,6 +275,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     setEditPriority(task.priority)
     setEditImages(task.images || [])
     setNewSubtaskTitle('')
+    setEditorMode('markdown')
   }
 
   // Switch to edit mode

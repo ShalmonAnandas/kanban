@@ -30,7 +30,7 @@ export async function PATCH(
       data: {
         ...(body.title !== undefined && { title: body.title }),
         ...(body.done !== undefined && { done: body.done }),
-        ...(body.order !== undefined && { order: body.order }),
+        ...(body.order !== undefined && Number.isInteger(body.order) && body.order >= 0 && { order: body.order }),
       },
     })
 
