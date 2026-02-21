@@ -106,8 +106,18 @@ export function KanbanColumn({
           : 'bg-gray-50/80'
       } ${sortable.isDragging ? 'opacity-40' : ''}`}
     >
+      {/* Color bar behind column title */}
+      {column.color && (
+        <div
+          className="h-1.5 rounded-t-xl shrink-0"
+          style={{ backgroundColor: column.color }}
+        />
+      )}
+
       {/* Column Header */}
-      <div className="flex items-center justify-between px-3 pt-3 pb-2">
+      <div className="flex items-center justify-between px-3 pt-3 pb-2"
+        style={column.color ? { backgroundColor: column.color + '33' } : undefined}
+      >
         <div className="flex items-center gap-2 min-w-0">
           {/* Drag handle */}
           <button

@@ -3,6 +3,7 @@ import { getUserIdFromCookie, SESSION_INIT_PATH } from '@/lib/session'
 import { MASKED_PAT } from '@/lib/constants'
 import { KanbanBoard, Board } from '@/components/KanbanBoard'
 import { redirect } from 'next/navigation'
+import { PASTEL_COLORS } from '@/lib/colors'
 
 export default async function Home() {
   const userId = await getUserIdFromCookie()
@@ -39,9 +40,9 @@ export default async function Home() {
         userId,
         columns: {
           create: [
-            { title: 'To Do', order: 0, isStart: true },
-            { title: 'In Progress', order: 1 },
-            { title: 'Done', order: 2, isEnd: true },
+            { title: 'To Do', order: 0, isStart: true, color: PASTEL_COLORS[0] },
+            { title: 'In Progress', order: 1, color: PASTEL_COLORS[4] },
+            { title: 'Done', order: 2, isEnd: true, color: PASTEL_COLORS[3] },
           ],
         },
       },

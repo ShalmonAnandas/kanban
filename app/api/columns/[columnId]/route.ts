@@ -33,6 +33,7 @@ export async function PATCH(
         ...(body.title !== undefined && { title: body.title }),
         ...(body.isStart !== undefined && { isStart: body.isStart }),
         ...(body.isEnd !== undefined && { isEnd: body.isEnd }),
+        ...(body.color !== undefined && { color: body.color }),
       },
     })
 
