@@ -169,19 +169,19 @@ export function KanbanColumn({
                   onClick={() => { setIsRenaming(true); setShowMenu(false); setRenameValue(column.title) }}
                   className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-gray-700 transition-colors"
                 >
-                  ✏️ Rename
+                  Rename
                 </button>
                 <button
                   onClick={handleToggleStart}
                   className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-gray-700 transition-colors"
                 >
-                  {column.isStart ? '🟢 Unset Start' : '🟢 Set as Start'}
+                  {column.isStart ? 'Unset Start' : 'Set as Start'}
                 </button>
                 <button
                   onClick={handleToggleEnd}
                   className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-gray-700 transition-colors"
                 >
-                  {column.isEnd ? '🔴 Unset End' : '🔴 Set as End'}
+                  {column.isEnd ? 'Unset End' : 'Set as End'}
                 </button>
                 <hr className="my-1 border-gray-100" />
                 <button
@@ -189,7 +189,7 @@ export function KanbanColumn({
                   className={`w-full text-left px-3 py-1.5 transition-colors ${confirmDelete ? 'bg-red-50 text-red-700 font-semibold' : 'hover:bg-red-50 text-red-600'}`}
                   aria-label={confirmDelete ? 'Press again to confirm deletion' : 'Delete column'}
                 >
-                  {confirmDelete ? '⚠️ Confirm?' : '🗑️ Delete'}
+                  {confirmDelete ? 'Confirm?' : 'Delete'}
                 </button>
               </div>
             )}

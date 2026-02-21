@@ -8,6 +8,7 @@ import {
   closestCorners,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragStartEvent,
@@ -24,7 +25,19 @@ import {
 import { KanbanColumn } from './KanbanColumn'
 import { TaskCard } from './TaskCard'
 import { Spinner } from './Spinner'
+import { MarkdownRenderer } from './MarkdownRenderer'
+import { RichEditor } from './RichEditor'
 import { fetchJiraIssueClientSide } from '@/lib/jira-client'
+
+export type SubTask = {
+  id: string
+  title: string
+  done: boolean
+  order: number
+  taskId: string
+  createdAt: string
+  updatedAt: string
+}
 
 export type Task = {
   id: string
@@ -36,6 +49,7 @@ export type Task = {
   startDate: string | null
   endDate: string | null
   images: string[]
+  subtasks: SubTask[]
   createdAt: string
   updatedAt: string
 }
@@ -124,6 +138,18 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   // Image viewer
   const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null)
 
+  // Editor mode toggle
+  const [editorMode, setEditorMode] = useState<'markdown' | 'rich'>('markdown')
+
+  // Subtask state
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
+  const [addingSubtask, setAddingSubtask] = useState(false)
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showSearchResults, setShowSearchResults] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+
   // Add task modal
   const [addTaskColumnId, setAddTaskColumnId] = useState<string | null>(null)
   const [addTaskTitle, setAddTaskTitle] = useState('')
@@ -145,6 +171,12 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
         distance: 5,
       },
     }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 300,
+        tolerance: 5,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -163,6 +195,52 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [reordering, savingTask, creatingTask])
+
+  // Escape key handler for modals
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (viewerImageUrl) {
+          setViewerImageUrl(null)
+        } else if (selectedTask) {
+          closeTaskModal()
+        } else if (addTaskColumnId) {
+          closeAddTaskModal()
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [viewerImageUrl, selectedTask, addTaskColumnId])
+
+  // Close search results on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSearchResults(false)
+      }
+    }
+    if (showSearchResults) document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showSearchResults])
+
+  // Search results
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return []
+    const query = searchQuery.toLowerCase()
+    const results: Task[] = []
+    for (const col of board.columns) {
+      for (const task of col.tasks) {
+        const titleMatch = task.title.toLowerCase().includes(query)
+        const descMatch = task.description?.toLowerCase().includes(query)
+        const subtaskMatch = task.subtasks?.some(st => st.title.toLowerCase().includes(query))
+        if (titleMatch || descMatch || subtaskMatch) {
+          results.push(task)
+        }
+      }
+    }
+    return results
+  }, [searchQuery, board.columns])
 
   // Helper: find which column contains a given task or is the column itself
   const findColumnOfItem = useCallback((id: UniqueIdentifier, columns: Column[]): Column | undefined => {
@@ -195,6 +273,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     setEditDescription(task.description || '')
     setEditPriority(task.priority)
     setEditImages(task.images || [])
+    setNewSubtaskTitle('')
   }
 
   // Switch to edit mode
@@ -205,12 +284,15 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     setEditDescription(task.description || '')
     setEditPriority(task.priority)
     setEditImages(task.images || [])
+    setNewSubtaskTitle('')
   }
 
   const closeTaskModal = () => {
     setSelectedTask(null)
     setTaskModalMode('view')
     setEditImages([])
+    setNewSubtaskTitle('')
+    setEditorMode('markdown')
   }
 
   const handleSaveTask = async () => {
@@ -237,6 +319,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               t.id === updatedTask.id
                 ? {
                     ...updatedTask,
+                    subtasks: t.subtasks,
                     startDate: updatedTask.startDate ? String(updatedTask.startDate) : null,
                     endDate: updatedTask.endDate ? String(updatedTask.endDate) : null,
                     createdAt: String(updatedTask.createdAt),
@@ -730,6 +813,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             if (col.id === columnId) {
               const serialized = createdTasks.map((t: Task) => ({
                 ...t,
+                subtasks: t.subtasks || [],
                 startDate: t.startDate ? String(t.startDate) : null,
                 endDate: t.endDate ? String(t.endDate) : null,
                 createdAt: String(t.createdAt),
@@ -760,6 +844,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
           if (col.id === columnId) {
             const serialized = newTasks.map((t: Task) => ({
               ...t,
+              subtasks: t.subtasks || [],
               startDate: t.startDate ? String(t.startDate) : null,
               endDate: t.endDate ? String(t.endDate) : null,
               createdAt: String(t.createdAt),
@@ -900,6 +985,97 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
 
   const noop = useCallback(() => {}, [])
 
+  // Subtask handlers
+  const handleAddSubtask = async (taskId: string, title: string) => {
+    if (!title.trim()) return
+    setAddingSubtask(true)
+    try {
+      const response = await fetch('/api/subtasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, title: title.trim() }),
+      })
+      if (response.ok) {
+        const newSubtask = await response.json()
+        const serialized = {
+          ...newSubtask,
+          createdAt: String(newSubtask.createdAt),
+          updatedAt: String(newSubtask.updatedAt),
+        }
+        setBoard((prev) => ({
+          ...prev,
+          columns: prev.columns.map((col) => ({
+            ...col,
+            tasks: col.tasks.map((t) =>
+              t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), serialized] } : t
+            ),
+          })),
+        }))
+        // Update selectedTask if it's the same task
+        setSelectedTask((prev) =>
+          prev && prev.id === taskId ? { ...prev, subtasks: [...(prev.subtasks || []), serialized] } : prev
+        )
+        setNewSubtaskTitle('')
+      }
+    } catch (error) {
+      console.error('Failed to add subtask:', error)
+    } finally {
+      setAddingSubtask(false)
+    }
+  }
+
+  const handleToggleSubtask = async (subtaskId: string, done: boolean) => {
+    try {
+      const response = await fetch(`/api/subtasks/${subtaskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ done }),
+      })
+      if (response.ok) {
+        setBoard((prev) => ({
+          ...prev,
+          columns: prev.columns.map((col) => ({
+            ...col,
+            tasks: col.tasks.map((t) => ({
+              ...t,
+              subtasks: (t.subtasks || []).map((st) =>
+                st.id === subtaskId ? { ...st, done } : st
+              ),
+            })),
+          })),
+        }))
+        setSelectedTask((prev) =>
+          prev ? { ...prev, subtasks: (prev.subtasks || []).map((st) => st.id === subtaskId ? { ...st, done } : st) } : prev
+        )
+      }
+    } catch (error) {
+      console.error('Failed to toggle subtask:', error)
+    }
+  }
+
+  const handleDeleteSubtask = async (subtaskId: string) => {
+    try {
+      const response = await fetch(`/api/subtasks/${subtaskId}`, { method: 'DELETE' })
+      if (response.ok) {
+        setBoard((prev) => ({
+          ...prev,
+          columns: prev.columns.map((col) => ({
+            ...col,
+            tasks: col.tasks.map((t) => ({
+              ...t,
+              subtasks: (t.subtasks || []).filter((st) => st.id !== subtaskId),
+            })),
+          })),
+        }))
+        setSelectedTask((prev) =>
+          prev ? { ...prev, subtasks: (prev.subtasks || []).filter((st) => st.id !== subtaskId) } : prev
+        )
+      }
+    } catch (error) {
+      console.error('Failed to delete subtask:', error)
+    }
+  }
+
   // Memoize priority-sorted columns to avoid re-sorting on every render
   const sortedColumns = useMemo(
     () => board.columns.map((col) => ({ ...col, tasks: sortTasksByPriority(col.tasks) })),
@@ -922,7 +1098,59 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             Settings
           </button>
           {hasJiraPat && (
-            <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200">✓ JIRA</span>
+            <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200">JIRA</span>
+          )}
+        </div>
+
+        {/* Search field */}
+        <div className="relative flex-1 max-w-md mx-4" ref={searchRef}>
+          <div className="relative">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setShowSearchResults(true) }}
+              onFocus={() => { if (searchQuery.trim()) setShowSearchResults(true) }}
+              placeholder="Search tasks..."
+              className="w-full pl-8 pr-8 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => { setSearchQuery(''); setShowSearchResults(false) }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {showSearchResults && searchQuery.trim() && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+              {searchResults.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-gray-400 text-center">No tasks found</div>
+              ) : (
+                searchResults.map((task) => (
+                  <button
+                    key={task.id}
+                    onClick={() => { openTaskModal(task); setShowSearchResults(false) }}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
+                  >
+                    <div className="text-xs font-medium text-gray-800 truncate">{task.title}</div>
+                    {task.description && (
+                      <div className="text-[10px] text-gray-400 truncate mt-0.5">{task.description.slice(0, 100)}</div>
+                    )}
+                    {task.subtasks?.some(st => st.title.toLowerCase().includes(searchQuery.toLowerCase())) && (
+                      <div className="text-[10px] text-violet-500 mt-0.5">
+                        Subtask match: {task.subtasks.filter(st => st.title.toLowerCase().includes(searchQuery.toLowerCase())).map(st => st.title).join(', ')}
+                      </div>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
           )}
         </div>
 
@@ -1188,12 +1416,18 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 </div>
 
                 <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
-                <p className="text-sm text-gray-800 mb-3 break-words">{selectedTask.title}</p>
+                <div className="text-sm text-gray-800 mb-3 break-words">
+                  <MarkdownRenderer content={selectedTask.title} />
+                </div>
 
                 <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Description</label>
-                <p className="text-xs text-gray-700 mb-3 whitespace-pre-wrap break-words font-mono bg-gray-50 rounded-lg px-3 py-2 min-h-[3rem]">
-                  {selectedTask.description || <span className="text-gray-400 italic">No description</span>}
-                </p>
+                <div className="text-xs text-gray-700 mb-3 bg-gray-50 rounded-lg px-3 py-2 min-h-[3rem]">
+                  {selectedTask.description ? (
+                    <MarkdownRenderer content={selectedTask.description} />
+                  ) : (
+                    <span className="text-gray-400 italic">No description</span>
+                  )}
+                </div>
 
                 <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
                 <p className="text-xs text-gray-700 mb-3 capitalize">{selectedTask.priority.replace('_', ' ')}</p>
@@ -1224,6 +1458,49 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   </div>
                 )}
 
+                {/* Subtasks */}
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Subtasks</label>
+                <div className="mb-3 space-y-1">
+                  {(selectedTask.subtasks || []).map((st) => (
+                    <div key={st.id} className="flex items-center gap-2 group">
+                      <input
+                        type="checkbox"
+                        checked={st.done}
+                        onChange={() => handleToggleSubtask(st.id, !st.done)}
+                        className="rounded border-gray-300 text-violet-500 focus:ring-violet-400"
+                      />
+                      <span className={`text-xs flex-1 ${st.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>{st.title}</span>
+                      <button
+                        onClick={() => handleDeleteSubtask(st.id)}
+                        className="text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-0.5"
+                        aria-label="Delete subtask"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="text"
+                      value={newSubtaskTitle}
+                      onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && selectedTask) { e.preventDefault(); handleAddSubtask(selectedTask.id, newSubtaskTitle) } }}
+                      placeholder="Add subtask..."
+                      className="flex-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                    />
+                    <button
+                      onClick={() => selectedTask && handleAddSubtask(selectedTask.id, newSubtaskTitle)}
+                      disabled={addingSubtask || !newSubtaskTitle.trim()}
+                      className="px-2 py-1 bg-violet-500 text-white rounded text-xs hover:bg-violet-600 transition-colors disabled:opacity-50 inline-flex items-center gap-1"
+                    >
+                      {addingSubtask && <Spinner size="sm" className="text-white" />}
+                      Add
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex justify-end mt-1">
                   <button
                     onClick={closeTaskModal}
@@ -1245,14 +1522,42 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
                 />
 
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Description</label>
-                <textarea
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  rows={4}
-                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
-                  placeholder="Add a description…"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Description</label>
+                  <div className="flex items-center gap-1 bg-gray-100 rounded-md p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditorMode('markdown')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${editorMode === 'markdown' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Markdown
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorMode('rich')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${editorMode === 'rich' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Rich
+                    </button>
+                  </div>
+                </div>
+                {editorMode === 'markdown' ? (
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
+                    placeholder="Add a description (supports markdown)..."
+                  />
+                ) : (
+                  <div className="mb-3">
+                    <RichEditor
+                      content={editDescription}
+                      onChange={setEditDescription}
+                      placeholder="Add a description..."
+                    />
+                  </div>
+                )}
 
                 <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
                 <select
@@ -1260,11 +1565,11 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   onChange={(e) => setEditPriority(e.target.value)}
                   className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
                 >
-                  <option value="critical">🔴 Critical</option>
-                  <option value="high">🟠 High</option>
-                  <option value="medium">🔵 Medium</option>
-                  <option value="low">🟢 Low</option>
-                  <option value="nice_to_have">⚪ Nice to have</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                  <option value="nice_to_have">Nice to have</option>
                 </select>
 
                 {/* Image upload */}
@@ -1327,7 +1632,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
 
                 <div className="flex justify-end gap-2 mt-1">
                   <button
-                    onClick={() => setTaskModalMode('view')}
+                    onClick={closeTaskModal}
                     className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors font-medium"
                   >
                     Cancel
@@ -1372,7 +1677,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               onChange={(e) => setAddTaskDescription(e.target.value)}
               rows={4}
               className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
-              placeholder="Add a description…"
+              placeholder="Add a description (supports markdown)..."
             />
 
             <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
@@ -1381,11 +1686,11 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               onChange={(e) => setAddTaskPriority(e.target.value)}
               className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
             >
-              <option value="critical">🔴 Critical</option>
-              <option value="high">🟠 High</option>
-              <option value="medium">🔵 Medium</option>
-              <option value="low">🟢 Low</option>
-              <option value="nice_to_have">⚪ Nice to have</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="nice_to_have">Nice to have</option>
             </select>
 
             {/* Image upload */}
