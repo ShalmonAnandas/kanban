@@ -48,9 +48,10 @@ type TaskCardProps = {
   isOverlay?: boolean
   onDelete?: () => void
   onEdit?: (task: Task) => void
+  onView?: (task: Task) => void
 }
 
-export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit }: TaskCardProps) {
+export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView }: TaskCardProps) {
   const sortable = useSortable({ id: task.id, disabled: isOverlay })
 
   const style = isOverlay
@@ -64,8 +65,8 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit }: Task
   const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.medium
 
   const handleCardClick = () => {
-    if (onEdit && !isDragging && !isOverlay && !sortable.isDragging) {
-      onEdit(task)
+    if (onView && !isDragging && !isOverlay && !sortable.isDragging) {
+      onView(task)
     }
   }
 
@@ -118,29 +119,47 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit }: Task
             </div>
           )}
         </div>
-        {onDelete && !isDragging && !isOverlay && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete()
-            }}
-            className="text-gray-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100 mt-0.5"
-            aria-label="Delete task"
-          >
-            <svg
-              className="w-3.5 h-3.5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+        {!isDragging && !isOverlay && (
+          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+            {onEdit && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEdit(task)
+                }}
+                className="text-gray-300 hover:text-violet-500 transition-colors p-0.5"
+                aria-label="Edit task"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="text-gray-300 hover:text-red-500 transition-colors p-0.5"
+                aria-label="Delete task"
+              >
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

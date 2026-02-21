@@ -60,11 +60,11 @@ export default async function Home() {
     jiraPat: boardData.jiraPat ? MASKED_PAT : null,
     createdAt: boardData.createdAt.toISOString(),
     updatedAt: boardData.updatedAt.toISOString(),
-    columns: boardData.columns.map(col => ({
+    columns: boardData.columns.map((col: typeof boardData.columns[number]) => ({
       ...col,
       createdAt: col.createdAt.toISOString(),
       updatedAt: col.updatedAt.toISOString(),
-      tasks: col.tasks.map(task => ({
+      tasks: col.tasks.map((task: typeof col.tasks[number]) => ({
         ...task,
         startDate: task.startDate ? task.startDate.toISOString() : null,
         endDate: task.endDate ? task.endDate.toISOString() : null,
@@ -90,7 +90,7 @@ export default async function Home() {
         </div>
       </header>
       <main className="max-w-full mx-auto py-4">
-        <KanbanBoard initialBoard={board} />
+        <KanbanBoard initialBoard={board} userId={userId} />
       </main>
     </div>
   )

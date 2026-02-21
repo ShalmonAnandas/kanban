@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     }
     
     // Use a single transaction for verification + reorder to minimize DB round trips
-    const updatedTask = await prisma.$transaction(async (tx) => {
+    const updatedTask = await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
       // Verify task and target column belong to user in parallel
       const [task, targetColumn] = await Promise.all([
         tx.task.findFirst({

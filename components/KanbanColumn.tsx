@@ -16,6 +16,7 @@ type KanbanColumnProps = {
   onAddTask: (columnId: string) => void
   onDeleteTask: (taskId: string) => void
   onEditTask: (task: Task) => void
+  onViewTask: (task: Task) => void
   onUpdateColumn: (columnId: string, data: Partial<Column>) => void
   onDeleteColumn: (columnId: string) => void
   isOver?: boolean
@@ -27,6 +28,7 @@ export function KanbanColumn({
   onAddTask,
   onDeleteTask,
   onEditTask,
+  onViewTask,
   onUpdateColumn,
   onDeleteColumn,
   isOver,
@@ -213,6 +215,7 @@ export function KanbanColumn({
               task={task}
               onDelete={() => onDeleteTask(task.id)}
               onEdit={onEditTask}
+              onView={onViewTask}
             />
           ))}
           {column.tasks.length === 0 && (

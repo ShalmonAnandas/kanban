@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Image from 'next/image'
 import {
   DndContext,
@@ -65,13 +65,38 @@ export type Board = {
 
 type KanbanBoardProps = {
   initialBoard: Board
+  userId: string
 }
 
-export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
+const PRIORITY_ORDER: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  nice_to_have: 4,
+}
+
+function sortTasksByPriority(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const pa = PRIORITY_ORDER[a.priority] ?? 2
+    const pb = PRIORITY_ORDER[b.priority] ?? 2
+    if (pa !== pb) return pa - pb
+    return a.order - b.order
+  })
+}
+
+export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   const [board, setBoard] = useState<Board>(initialBoard)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
   const [activeColumn, setActiveColumn] = useState<Column | null>(null)
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
+
+  // User identifier
+  const [showUserIdInput, setShowUserIdInput] = useState(false)
+  const [userIdInput, setUserIdInput] = useState('')
+  const [switchingSession, setSwitchingSession] = useState(false)
+  const [sessionError, setSessionError] = useState('')
+  const [copied, setCopied] = useState(false)
 
   // Board settings
   const [showBoardSettings, setShowBoardSettings] = useState(false)
@@ -88,6 +113,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
   // Task detail modal (edit)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [taskModalMode, setTaskModalMode] = useState<'view' | 'edit'>('view')
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editPriority, setEditPriority] = useState('medium')
@@ -128,6 +154,16 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     setBoard(initialBoard)
   }, [initialBoard])
 
+  // Prevent page close while saving
+  useEffect(() => {
+    if (!reordering && !savingTask && !creatingTask) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [reordering, savingTask, creatingTask])
+
   // Helper: find which column contains a given task or is the column itself
   const findColumnOfItem = useCallback((id: UniqueIdentifier, columns: Column[]): Column | undefined => {
     const col = columns.find((c) => c.id === id)
@@ -151,9 +187,20 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
     return undefined
   }, [])
 
-  // Open task detail modal
+  // Open task detail modal in view mode
   const openTaskModal = (task: Task) => {
     setSelectedTask(task)
+    setTaskModalMode('view')
+    setEditTitle(task.title)
+    setEditDescription(task.description || '')
+    setEditPriority(task.priority)
+    setEditImages(task.images || [])
+  }
+
+  // Switch to edit mode
+  const openTaskEditMode = (task: Task) => {
+    setSelectedTask(task)
+    setTaskModalMode('edit')
     setEditTitle(task.title)
     setEditDescription(task.description || '')
     setEditPriority(task.priority)
@@ -162,6 +209,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
   const closeTaskModal = () => {
     setSelectedTask(null)
+    setTaskModalMode('view')
     setEditImages([])
   }
 
@@ -817,25 +865,136 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
 
   const hasJiraPat = !!board.jiraPat
 
+  const handleCopyUserId = async () => {
+    try {
+      await navigator.clipboard.writeText(userId)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Fallback: select text
+    }
+  }
+
+  const handleSwitchSession = async () => {
+    if (!userIdInput.trim()) return
+    setSwitchingSession(true)
+    setSessionError('')
+    try {
+      const response = await fetch('/api/session/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userIdInput.trim() }),
+      })
+      if (response.ok) {
+        window.location.reload()
+      } else {
+        const data = await response.json()
+        setSessionError(data.error || 'Failed to switch session')
+      }
+    } catch {
+      setSessionError('Failed to switch session')
+    } finally {
+      setSwitchingSession(false)
+    }
+  }
+
   const noop = useCallback(() => {}, [])
+
+  // Memoize priority-sorted columns to avoid re-sorting on every render
+  const sortedColumns = useMemo(
+    () => board.columns.map((col) => ({ ...col, tasks: sortTasksByPriority(col.tasks) })),
+    [board.columns]
+  )
 
   return (
     <>
       {/* Header actions */}
-      <div className="flex items-center gap-2 px-6 mb-4">
-        <button
-          onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || ''); setJiraPatInput('') }}
-          className="px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 font-medium inline-flex items-center gap-1.5"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          Settings
-        </button>
-        {hasJiraPat && (
-          <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200">✓ JIRA</span>
-        )}
+      <div className="flex items-center justify-between px-6 mb-4">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowBoardSettings((v) => !v); setJiraUrlInput(board.jiraBaseUrl || ''); setJiraPatInput('') }}
+            className="px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 font-medium inline-flex items-center gap-1.5"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Settings
+          </button>
+          {hasJiraPat && (
+            <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200">✓ JIRA</span>
+          )}
+        </div>
+
+        {/* User Identifier */}
+        <div className="relative flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5">
+            <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <span className="text-[10px] text-gray-500 font-mono select-all" title="Your user ID">{userId}</span>
+            <button
+              onClick={handleCopyUserId}
+              className="text-gray-400 hover:text-violet-500 transition-colors"
+              aria-label="Copy user ID"
+              title="Copy user ID"
+            >
+              {copied ? (
+                <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={() => { setShowUserIdInput((v) => !v); setUserIdInput(''); setSessionError('') }}
+              className="text-gray-400 hover:text-violet-500 transition-colors"
+              aria-label="Switch user session"
+              title="Switch session"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+          </div>
+          {showUserIdInput && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-72">
+              <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Enter User ID</label>
+              <p className="text-[10px] text-gray-400 mb-2">Enter a known user ID to load their board on this device.</p>
+              <input
+                type="text"
+                value={userIdInput}
+                onChange={(e) => setUserIdInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSwitchSession() }}
+                placeholder="Paste user ID here…"
+                className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-2 font-mono"
+                autoFocus
+              />
+              {sessionError && (
+                <p className="text-[10px] text-red-500 mb-2">{sessionError}</p>
+              )}
+              <div className="flex gap-1.5">
+                <button
+                  onClick={handleSwitchSession}
+                  disabled={switchingSession || !userIdInput.trim()}
+                  className="px-2.5 py-1 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors font-medium disabled:opacity-50 inline-flex items-center gap-1"
+                >
+                  {switchingSession && <Spinner size="sm" className="text-white" />}
+                  {switchingSession ? 'Switching…' : 'Switch'}
+                </button>
+                <button
+                  onClick={() => { setShowUserIdInput(false); setSessionError('') }}
+                  className="px-2.5 py-1 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Board settings panel */}
@@ -886,12 +1045,12 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         </div>
       )}
 
-      {/* Reorder loading overlay */}
+      {/* Non-intrusive saving toast (top right) */}
       {reordering && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm pointer-events-none" role="status" aria-live="polite">
-          <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-5 py-3 shadow-xl">
-            <Spinner size="md" className="text-violet-500" />
-            <span className="text-sm text-gray-700 font-medium">Saving changes…</span>
+        <div className="fixed top-4 right-4 z-50 pointer-events-none" role="status" aria-live="polite">
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-lg">
+            <Spinner size="sm" className="text-violet-500" />
+            <span className="text-xs text-gray-700 font-medium">Saving…</span>
           </div>
         </div>
       )}
@@ -905,13 +1064,14 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       >
         <SortableContext items={board.columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
           <div className="flex gap-3 overflow-x-auto pb-4 px-6 items-start">
-            {board.columns.map((column) => (
+            {sortedColumns.map((column) => (
               <KanbanColumn
                 key={column.id}
                 column={column}
                 onAddTask={openAddTaskModal}
                 onDeleteTask={handleDeleteTask}
-                onEditTask={openTaskModal}
+                onEditTask={openTaskEditMode}
+                onViewTask={openTaskModal}
                 onUpdateColumn={handleUpdateColumn}
                 onDeleteColumn={handleDeleteColumn}
                 isOver={activeColumnId === column.id}
@@ -995,6 +1155,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
                 onAddTask={noop}
                 onDeleteTask={noop}
                 onEditTask={noop}
+                onViewTask={noop}
                 onUpdateColumn={noop}
                 onDeleteColumn={noop}
                 isOverlay
@@ -1004,119 +1165,184 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
         </DragOverlay>
       </DndContext>
 
-      {/* Task Detail Modal (Edit) */}
+      {/* Task Detail Modal (View / Edit) */}
       {selectedTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="task-modal-title" onClick={closeTaskModal}>
           <div
-            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-md mx-4 p-5 max-h-[90vh] overflow-y-auto"
+            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="task-modal-title" className="text-sm font-bold text-gray-900 mb-4">Edit Task</h2>
-
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
-            <input
-              type="text"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
-            />
-
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Description</label>
-            <textarea
-              value={editDescription}
-              onChange={(e) => setEditDescription(e.target.value)}
-              rows={4}
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
-              placeholder="Add a description…"
-            />
-
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
-            <select
-              value={editPriority}
-              onChange={(e) => setEditPriority(e.target.value)}
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
-            >
-              <option value="critical">🔴 Critical</option>
-              <option value="high">🟠 High</option>
-              <option value="medium">🔵 Medium</option>
-              <option value="low">🟢 Low</option>
-              <option value="nice_to_have">⚪ Nice to have</option>
-            </select>
-
-            {/* Image upload */}
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Images</label>
-            <div className="mb-3">
-              {editImages.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {editImages.map((url, idx) => (
-                    <div key={idx} className="relative group">
-                      <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
-                      <button
-                        type="button"
-                        onClick={() => setEditImages((prev) => prev.filter((_, i) => i !== idx))}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        aria-label="Remove image"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+            {taskModalMode === 'view' ? (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 id="task-modal-title" className="text-sm font-bold text-gray-900">Task Details</h2>
+                  <button
+                    onClick={() => setTaskModalMode('edit')}
+                    className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors font-medium inline-flex items-center gap-1.5"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit
+                  </button>
                 </div>
-              )}
-              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
-                {uploadingImage ? <Spinner size="sm" className="text-violet-500" /> : (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
+
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
+                <p className="text-sm text-gray-800 mb-3 break-words">{selectedTask.title}</p>
+
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Description</label>
+                <p className="text-xs text-gray-700 mb-3 whitespace-pre-wrap break-words font-mono bg-gray-50 rounded-lg px-3 py-2 min-h-[3rem]">
+                  {selectedTask.description || <span className="text-gray-400 italic">No description</span>}
+                </p>
+
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
+                <p className="text-xs text-gray-700 mb-3 capitalize">{selectedTask.priority.replace('_', ' ')}</p>
+
+                {selectedTask.images && selectedTask.images.length > 0 && (
+                  <>
+                    <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Images</label>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {selectedTask.images.map((url, idx) => (
+                        <Image key={idx} src={url} alt={`Attachment ${idx + 1}`} width={80} height={80} className="w-20 h-20 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
+                      ))}
+                    </div>
+                  </>
                 )}
-                {uploadingImage ? 'Uploading…' : 'Upload image'}
+
+                {(selectedTask.startDate || selectedTask.endDate) && (
+                  <div className="flex gap-3 mb-3 text-[10px] text-gray-500">
+                    {selectedTask.startDate && (
+                      <div className="bg-gray-50 px-2 py-1 rounded-md">
+                        <span className="font-semibold">Start:</span> {formatDateDisplay(selectedTask.startDate)}
+                      </div>
+                    )}
+                    {selectedTask.endDate && (
+                      <div className="bg-gray-50 px-2 py-1 rounded-md">
+                        <span className="font-semibold">End:</span> {formatDateDisplay(selectedTask.endDate)}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex justify-end mt-1">
+                  <button
+                    onClick={closeTaskModal}
+                    className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors font-medium"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 id="task-modal-title" className="text-sm font-bold text-gray-900 mb-4">Edit Task</h2>
+
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
                 <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif,image/webp"
-                  className="hidden"
-                  disabled={uploadingImage}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (file) {
-                      handleImageUpload(file, setEditImages, setUploadingImage)
-                      e.target.value = ''
-                    }
-                  }}
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
                 />
-              </label>
-            </div>
 
-            {(selectedTask.startDate || selectedTask.endDate) && (
-              <div className="flex gap-3 mb-3 text-[10px] text-gray-500">
-                {selectedTask.startDate && (
-                  <div className="bg-gray-50 px-2 py-1 rounded-md">
-                    <span className="font-semibold">Start:</span> {formatDateDisplay(selectedTask.startDate)}
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Description</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
+                  placeholder="Add a description…"
+                />
+
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
+                <select
+                  value={editPriority}
+                  onChange={(e) => setEditPriority(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
+                >
+                  <option value="critical">🔴 Critical</option>
+                  <option value="high">🟠 High</option>
+                  <option value="medium">🔵 Medium</option>
+                  <option value="low">🟢 Low</option>
+                  <option value="nice_to_have">⚪ Nice to have</option>
+                </select>
+
+                {/* Image upload */}
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Images</label>
+                <div className="mb-3">
+                  {editImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {editImages.map((url, idx) => (
+                        <div key={idx} className="relative group">
+                          <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
+                          <button
+                            type="button"
+                            onClick={() => setEditImages((prev) => prev.filter((_, i) => i !== idx))}
+                            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label="Remove image"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
+                    {uploadingImage ? <Spinner size="sm" className="text-violet-500" /> : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                    {uploadingImage ? 'Uploading…' : 'Upload image'}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      className="hidden"
+                      disabled={uploadingImage}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          handleImageUpload(file, setEditImages, setUploadingImage)
+                          e.target.value = ''
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {(selectedTask.startDate || selectedTask.endDate) && (
+                  <div className="flex gap-3 mb-3 text-[10px] text-gray-500">
+                    {selectedTask.startDate && (
+                      <div className="bg-gray-50 px-2 py-1 rounded-md">
+                        <span className="font-semibold">Start:</span> {formatDateDisplay(selectedTask.startDate)}
+                      </div>
+                    )}
+                    {selectedTask.endDate && (
+                      <div className="bg-gray-50 px-2 py-1 rounded-md">
+                        <span className="font-semibold">End:</span> {formatDateDisplay(selectedTask.endDate)}
+                      </div>
+                    )}
                   </div>
                 )}
-                {selectedTask.endDate && (
-                  <div className="bg-gray-50 px-2 py-1 rounded-md">
-                    <span className="font-semibold">End:</span> {formatDateDisplay(selectedTask.endDate)}
-                  </div>
-                )}
-              </div>
+
+                <div className="flex justify-end gap-2 mt-1">
+                  <button
+                    onClick={() => setTaskModalMode('view')}
+                    className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveTask}
+                    disabled={savingTask || uploadingImage}
+                    className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
+                  >
+                    {savingTask && <Spinner size="sm" className="text-white" />}
+                    {savingTask ? 'Saving…' : 'Save Changes'}
+                  </button>
+                </div>
+              </>
             )}
-
-            <div className="flex justify-end gap-2 mt-1">
-              <button
-                onClick={closeTaskModal}
-                className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveTask}
-                disabled={savingTask || uploadingImage}
-                className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
-              >
-                {savingTask && <Spinner size="sm" className="text-white" />}
-                {savingTask ? 'Saving…' : 'Save Changes'}
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1125,7 +1351,7 @@ export function KanbanBoard({ initialBoard }: KanbanBoardProps) {
       {addTaskColumnId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="add-task-modal-title" onClick={closeAddTaskModal}>
           <div
-            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-md mx-4 p-5 max-h-[90vh] overflow-y-auto"
+            className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="add-task-modal-title" className="text-sm font-bold text-gray-900 mb-4">Add Task</h2>

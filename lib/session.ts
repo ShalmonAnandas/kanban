@@ -12,26 +12,28 @@ export async function getUserIdFromCookie(): Promise<string | null> {
 
 export async function getUserId(): Promise<string> {
   const cookieStore = await cookies()
-  let userId = cookieStore.get(USER_COOKIE_NAME)?.value
+  const userId = cookieStore.get(USER_COOKIE_NAME)?.value
 
-  if (!userId) {
-    // Create a new anonymous user
-    const user = await prisma.user.create({
-      data: {},
-    })
-    userId = user.id
-    
-    // Set cookie
-    cookieStore.set(USER_COOKIE_NAME, userId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: COOKIE_MAX_AGE,
-      path: '/',
-    })
+  if (userId) {
+    return userId
   }
 
-  return userId
+  // Create a new anonymous user
+  const user = await prisma.user.create({
+    data: {},
+  })
+  const newUserId = user.id as string
+  
+  // Set cookie
+  cookieStore.set(USER_COOKIE_NAME, newUserId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: COOKIE_MAX_AGE,
+    path: '/',
+  })
+
+  return newUserId
 }
 
 export async function getOrCreateUser() {
