@@ -1,16 +1,17 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 
 const DB_URL_ENV_NAMES = [
-  // Neon-specific env vars (set by some Vercel Neon integrations)
-  'NEON_DATABASE_URL',
-  'NEON_POSTGRES_URL',
+  // 1. Prioritize unpooled connections first (Required for Neon HTTP driver)
   'NEON_DATABASE_URL_UNPOOLED',
   'NEON_POSTGRES_URL_NON_POOLING',
-  'NEON_POSTGRES_URL_NO_SSL',
-  // Standard Vercel Postgres / Neon env vars
+  'DATABASE_URL_UNPOOLED',
+  'POSTGRES_URL_NON_POOLING',
+  
+  // 2. Fallbacks (Vercel will likely inject these, but they are usually pooled)
+  'NEON_DATABASE_URL',
+  'NEON_POSTGRES_URL',
   'POSTGRES_URL',
   'DATABASE_URL',
-  'POSTGRES_URL_NON_POOLING',
   'POSTGRES_PRISMA_URL',
 ] as const
 
