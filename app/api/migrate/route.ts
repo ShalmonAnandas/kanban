@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { encrypt, encryptNullable } from '@/lib/encryption'
 import { initSchema } from '@/lib/db-schema'
-import { getNeonDatabaseUrl } from '@/lib/db'
+import { getNeonDatabaseUrl, normalizePostgresUrl } from '@/lib/db'
 
 /**
  * Migration scheduler: copies data from the old Prisma Postgres database to the new Neon database.
@@ -22,7 +22,7 @@ function getPrismaDb() {
   if (!url) {
     throw new Error('No Prisma database URL configured (PRISMA_DATABASE_URL, DATABASE_URL, or POSTGRES_URL)')
   }
-  return neon(url)
+  return neon(normalizePostgresUrl(url))
 }
 
 // Connect to new Neon database (write)
