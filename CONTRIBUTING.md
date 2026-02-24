@@ -33,7 +33,8 @@ cp .env.example .env
 
 Edit `.env` with your database connection:
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/kanban"
+POSTGRES_PRISMA_URL="postgresql://postgres:postgres@localhost:5432/kanban"
+POSTGRES_URL_NON_POOLING="postgresql://postgres:postgres@localhost:5432/kanban"
 ```
 
 4. **Set up the database**

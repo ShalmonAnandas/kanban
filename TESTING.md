@@ -14,12 +14,13 @@ docker run --name kanban-test -e POSTGRES_PASSWORD=test -p 5433:5432 -d postgres
 
 2. Update `.env.test`:
 ```bash
-DATABASE_URL="postgresql://postgres:test@localhost:5433/kanban_test"
+POSTGRES_PRISMA_URL="postgresql://postgres:test@localhost:5433/kanban_test"
+POSTGRES_URL_NON_POOLING="postgresql://postgres:test@localhost:5433/kanban_test"
 ```
 
 3. Push schema:
 ```bash
-DATABASE_URL="postgresql://postgres:test@localhost:5433/kanban_test" npm run db:push
+POSTGRES_PRISMA_URL="postgresql://postgres:test@localhost:5433/kanban_test" npm run db:push
 ```
 
 ### Test Checklist
