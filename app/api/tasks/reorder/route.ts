@@ -1,5 +1,13 @@
 import { NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import {
+  findTaskOwnedBy,
+  findColumnOwnedBy,
+  decrementTaskOrders,
+  incrementTaskOrders,
+  decrementTaskOrdersAbove,
+  incrementTaskOrdersAbove,
+  moveTask,
+} from '@/lib/db-queries'
 import { getUserId } from '@/lib/session'
 
 export async function POST(request: Request) {
@@ -14,98 +22,68 @@ export async function POST(request: Request) {
       )
     }
     
-    // Use a single transaction for verification + reorder to minimize DB round trips
-    const updatedTask = await prisma.$transaction(async (tx) => {
-      // Verify task and target column belong to user in parallel
-      const [task, targetColumn] = await Promise.all([
-        tx.task.findFirst({
-          where: {
-            id: taskId,
-            column: { board: { userId } },
-          },
-        }),
-        tx.column.findFirst({
-          where: {
-            id: columnId,
-            board: { userId },
-          },
-        }),
-      ])
+    // Verify task and target column belong to user
+    const [task, targetColumn] = await Promise.all([
+      findTaskOwnedBy(taskId, userId),
+      findColumnOwnedBy(columnId, userId),
+    ])
 
-      if (!task) throw new Error('Task not found')
-      if (!targetColumn) throw new Error('Column not found')
-      
-      const oldColumnId = task.columnId
-      const oldOrder = task.order
-      
-      if (oldColumnId === columnId) {
-        // Moving within same column
-        if (newOrder > oldOrder) {
-          await tx.task.updateMany({
-            where: {
-              columnId,
-              order: { gt: oldOrder, lte: newOrder },
-            },
-            data: { order: { decrement: 1 } },
-          })
-        } else if (newOrder < oldOrder) {
-          await tx.task.updateMany({
-            where: {
-              columnId,
-              order: { gte: newOrder, lt: oldOrder },
-            },
-            data: { order: { increment: 1 } },
-          })
-        }
-      } else {
-        // Moving to different column
-        await Promise.all([
-          tx.task.updateMany({
-            where: {
-              columnId: oldColumnId,
-              order: { gt: oldOrder },
-            },
-            data: { order: { decrement: 1 } },
-          }),
-          tx.task.updateMany({
-            where: {
-              columnId,
-              order: { gte: newOrder },
-            },
-            data: { order: { increment: 1 } },
-          }),
-        ])
-      }
-      
-      // Date tracking based on column flags
-      const dateUpdates: { startDate?: Date; endDate?: Date | null } = {}
-      if (targetColumn.isEnd) {
-        dateUpdates.endDate = new Date()
-      } else if (task.endDate) {
-        dateUpdates.endDate = null
-      }
-      if (targetColumn.isStart && !task.startDate) {
-        dateUpdates.startDate = new Date()
-      }
-
-      return tx.task.update({
-        where: { id: taskId },
-        data: {
-          columnId,
-          order: newOrder,
-          ...dateUpdates,
-        },
-      })
-    })
+    if (!task) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+    }
+    if (!targetColumn) {
+      return NextResponse.json({ error: 'Column not found' }, { status: 404 })
+    }
     
-    // Return only the updated task instead of the full board
-    return NextResponse.json(updatedTask)
+    const oldColumnId = task.column_id
+    const oldOrder = task.order
+    
+    if (oldColumnId === columnId) {
+      // Moving within same column
+      if (newOrder > oldOrder) {
+        await decrementTaskOrders(columnId, oldOrder, newOrder)
+      } else if (newOrder < oldOrder) {
+        await incrementTaskOrders(columnId, newOrder, oldOrder)
+      }
+    } else {
+      // Moving to different column
+      await Promise.all([
+        decrementTaskOrdersAbove(oldColumnId, oldOrder),
+        incrementTaskOrdersAbove(columnId, newOrder),
+      ])
+    }
+    
+    // Date tracking based on column flags
+    const dateUpdates: { startDate?: Date; endDate?: Date | null } = {}
+    if (targetColumn.is_end) {
+      dateUpdates.endDate = new Date()
+    } else if (task.end_date) {
+      dateUpdates.endDate = null
+    }
+    if (targetColumn.is_start && !task.start_date) {
+      dateUpdates.startDate = new Date()
+    }
+
+    const updatedTask = await moveTask(taskId, columnId, newOrder, dateUpdates)
+    
+    // Return camelCase for client
+    return NextResponse.json({
+      id: updatedTask.id,
+      title: updatedTask.title,
+      description: updatedTask.description,
+      priority: updatedTask.priority,
+      order: updatedTask.order,
+      pinned: updatedTask.pinned,
+      columnId: updatedTask.column_id,
+      startDate: updatedTask.start_date,
+      endDate: updatedTask.end_date,
+      images: updatedTask.images,
+      createdAt: updatedTask.created_at,
+      updatedAt: updatedTask.updated_at,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to reorder task'
-    const status = message === 'Task not found' || message === 'Column not found' ? 404 : 500
-    if (status === 500) {
-      console.error('[Reorder API] Error reordering task:', error)
-    }
-    return NextResponse.json({ error: message }, { status })
+    console.error('[Reorder API] Error reordering task:', error)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

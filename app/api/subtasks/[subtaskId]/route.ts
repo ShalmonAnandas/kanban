@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { findSubtaskOwnedBy, updateSubtask as dbUpdateSubtask, deleteSubtask as dbDeleteSubtask } from '@/lib/db-queries'
 import { getUserId } from '@/lib/session'
 
 type Params = Promise<{ subtaskId: string }>
@@ -14,27 +14,28 @@ export async function PATCH(
     const body = await request.json()
 
     // Verify subtask belongs to user
-    const subtask = await prisma.subTask.findFirst({
-      where: {
-        id: subtaskId,
-        task: { column: { board: { userId } } },
-      },
-    })
+    const subtask = await findSubtaskOwnedBy(subtaskId, userId)
 
     if (!subtask) {
       return NextResponse.json({ error: 'Subtask not found' }, { status: 404 })
     }
 
-    const updated = await prisma.subTask.update({
-      where: { id: subtaskId },
-      data: {
-        ...(body.title !== undefined && { title: body.title }),
-        ...(body.done !== undefined && { done: body.done }),
-        ...(body.order !== undefined && Number.isInteger(body.order) && body.order >= 0 && { order: body.order }),
-      },
+    const updated = await dbUpdateSubtask(subtaskId, {
+      ...(body.title !== undefined && { title: body.title }),
+      ...(body.done !== undefined && { done: body.done }),
+      ...(body.order !== undefined && Number.isInteger(body.order) && body.order >= 0 && { order: body.order }),
     })
 
-    return NextResponse.json(updated)
+    // Map to camelCase
+    return NextResponse.json({
+      id: updated.id,
+      title: updated.title,
+      done: updated.done,
+      order: updated.order,
+      taskId: updated.task_id,
+      createdAt: updated.created_at,
+      updatedAt: updated.updated_at,
+    })
   } catch (error) {
     console.error('Error updating subtask:', error)
     return NextResponse.json({ error: 'Failed to update subtask' }, { status: 500 })
@@ -49,18 +50,13 @@ export async function DELETE(
     const { subtaskId } = await params
     const userId = await getUserId()
 
-    const subtask = await prisma.subTask.findFirst({
-      where: {
-        id: subtaskId,
-        task: { column: { board: { userId } } },
-      },
-    })
+    const subtask = await findSubtaskOwnedBy(subtaskId, userId)
 
     if (!subtask) {
       return NextResponse.json({ error: 'Subtask not found' }, { status: 404 })
     }
 
-    await prisma.subTask.delete({ where: { id: subtaskId } })
+    await dbDeleteSubtask(subtaskId)
 
     return NextResponse.json({ success: true })
   } catch (error) {

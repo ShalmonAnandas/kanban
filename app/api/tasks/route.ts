@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { findColumnOwnedBy, getLastTaskOrder, createTask as dbCreateTask } from '@/lib/db-queries'
 import { getUserId } from '@/lib/session'
 
 export async function POST(request: Request) {
@@ -23,19 +23,8 @@ export async function POST(request: Request) {
       )
     }
     
-    // Verify column belongs to user and get last task order in parallel
-    const [column, lastTask] = await Promise.all([
-      prisma.column.findFirst({
-        where: {
-          id: columnId,
-          board: { userId },
-        },
-      }),
-      prisma.task.findFirst({
-        where: { columnId },
-        orderBy: { order: 'desc' },
-      }),
-    ])
+    // Verify column belongs to user
+    const column = await findColumnOwnedBy(columnId, userId)
     
     if (!column) {
       return NextResponse.json(
@@ -43,20 +32,34 @@ export async function POST(request: Request) {
         { status: 404 }
       )
     }
+
+    const lastOrder = await getLastTaskOrder(columnId)
     
-    const task = await prisma.task.create({
-      data: {
-        title,
-        description: description || null,
-        columnId,
-        priority: priority || 'medium',
-        order: (lastTask?.order ?? -1) + 1,
-        ...(column.isStart && { startDate: new Date() }),
-        ...(Array.isArray(images) && { images }),
-      },
+    const task = await dbCreateTask({
+      title,
+      description: description || null,
+      columnId,
+      priority: priority || 'medium',
+      order: lastOrder + 1,
+      ...(column.is_start && { startDate: new Date() }),
+      ...(Array.isArray(images) && { images }),
     })
-    
-    return NextResponse.json(task, { status: 201 })
+
+    // Map to camelCase
+    return NextResponse.json({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      order: task.order,
+      pinned: task.pinned,
+      columnId: task.column_id,
+      startDate: task.start_date,
+      endDate: task.end_date,
+      images: task.images,
+      createdAt: task.created_at,
+      updatedAt: task.updated_at,
+    }, { status: 201 })
   } catch (error) {
     console.error('Error creating task:', error)
     return NextResponse.json(

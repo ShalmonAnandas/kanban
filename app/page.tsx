@@ -1,10 +1,12 @@
 import { Suspense } from 'react'
-import prisma from '@/lib/prisma'
+import { findBoardFirstByUserId, createBoard } from '@/lib/db-queries'
 import { getUserIdFromCookie, SESSION_INIT_PATH } from '@/lib/session'
 import { MASKED_PAT } from '@/lib/constants'
 import { KanbanBoard, Board } from '@/components/KanbanBoard'
 import { redirect } from 'next/navigation'
 import { PASTEL_COLORS } from '@/lib/colors'
+
+export const dynamic = 'force-dynamic'
 
 function BoardSkeleton() {
   return (
@@ -53,80 +55,58 @@ async function BoardContent() {
   }
   
   // Get or create a default board for the user
-  let boardData = await prisma.board.findFirst({
-    where: { userId },
-    include: {
-      columns: {
-        orderBy: { order: 'asc' },
-        include: {
-          tasks: {
-            orderBy: { order: 'asc' },
-            include: {
-              subtasks: {
-                orderBy: { order: 'asc' },
-              },
-            },
-          },
-        },
-      },
-    },
-  })
+  let boardData = await findBoardFirstByUserId(userId)
 
   // Create default board if none exists
   if (!boardData) {
-    boardData = await prisma.board.create({
-      data: {
-        title: 'My Kanban Board',
-        userId,
-        columns: {
-          create: [
-            { title: 'To Do', order: 0, isStart: true, color: PASTEL_COLORS[0] },
-            { title: 'In Progress', order: 1, color: PASTEL_COLORS[4] },
-            { title: 'Done', order: 2, isEnd: true, color: PASTEL_COLORS[3] },
-          ],
-        },
-      },
-      include: {
-        columns: {
-          orderBy: { order: 'asc' },
-          include: {
-            tasks: {
-              orderBy: { order: 'asc' },
-              include: {
-                subtasks: {
-                  orderBy: { order: 'asc' },
-                },
-              },
-            },
-          },
-        },
-      },
-    })
+    boardData = await createBoard('My Kanban Board', userId, [
+      { title: 'To Do', order: 0, isStart: true, color: PASTEL_COLORS[0] },
+      { title: 'In Progress', order: 1, color: PASTEL_COLORS[4] },
+      { title: 'Done', order: 2, isEnd: true, color: PASTEL_COLORS[3] },
+    ])
   }
 
   // Serialize dates to strings for client component
   const board: Board = {
-    ...boardData,
+    id: boardData.id,
+    title: boardData.title,
     subtitle: boardData.subtitle || null,
-    jiraBaseUrl: boardData.jiraBaseUrl || null,
-    jiraPat: boardData.jiraPat ? MASKED_PAT : null,
-    createdAt: boardData.createdAt.toISOString(),
-    updatedAt: boardData.updatedAt.toISOString(),
+    userId: boardData.user_id,
+    jiraBaseUrl: boardData.jira_base_url || null,
+    jiraPat: boardData.jira_pat ? MASKED_PAT : null,
+    createdAt: boardData.created_at,
+    updatedAt: boardData.updated_at,
     columns: boardData.columns.map((col: typeof boardData.columns[number]) => ({
-      ...col,
-      createdAt: col.createdAt.toISOString(),
-      updatedAt: col.updatedAt.toISOString(),
+      id: col.id,
+      title: col.title,
+      order: col.order,
+      color: col.color,
+      isStart: col.is_start,
+      isEnd: col.is_end,
+      boardId: col.board_id,
+      createdAt: col.created_at,
+      updatedAt: col.updated_at,
       tasks: col.tasks.map((task: typeof col.tasks[number]) => ({
-        ...task,
-        pinned: (task as typeof task & { pinned?: boolean }).pinned ?? false,
-        startDate: task.startDate ? task.startDate.toISOString() : null,
-        endDate: task.endDate ? task.endDate.toISOString() : null,
-        createdAt: task.createdAt.toISOString(),
-        updatedAt: task.updatedAt.toISOString(),
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        priority: task.priority,
+        order: task.order,
+        pinned: task.pinned ?? false,
+        columnId: task.column_id,
+        startDate: task.start_date || null,
+        endDate: task.end_date || null,
+        images: task.images || [],
+        createdAt: task.created_at,
+        updatedAt: task.updated_at,
         subtasks: (task.subtasks || []).map((st: typeof task.subtasks[number]) => ({
-          ...st,
-          createdAt: st.createdAt.toISOString(),
-          updatedAt: st.updatedAt.toISOString(),
+          id: st.id,
+          title: st.title,
+          done: st.done,
+          order: st.order,
+          taskId: st.task_id,
+          createdAt: st.created_at,
+          updatedAt: st.updated_at,
         })),
       })),
     })),

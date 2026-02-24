@@ -1,10 +1,48 @@
 import { NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { findBoardWithDetails, findBoardOwnedBy, deleteBoard, updateBoard } from '@/lib/db-queries'
 import { getUserId } from '@/lib/session'
 import { MASKED_PAT } from '@/lib/constants'
 import { backfillColumnColors } from '@/lib/backfillColumnColors'
 
 type Params = Promise<{ boardId: string }>
+
+function mapBoardToCamelCase(board: NonNullable<Awaited<ReturnType<typeof findBoardWithDetails>>>) {
+  return {
+    id: board.id,
+    title: board.title,
+    subtitle: board.subtitle,
+    userId: board.user_id,
+    jiraBaseUrl: board.jira_base_url,
+    jiraPat: board.jira_pat ? MASKED_PAT : null,
+    createdAt: board.created_at,
+    updatedAt: board.updated_at,
+    columns: board.columns.map((c) => ({
+      id: c.id,
+      title: c.title,
+      order: c.order,
+      color: c.color,
+      isStart: c.is_start,
+      isEnd: c.is_end,
+      boardId: c.board_id,
+      createdAt: c.created_at,
+      updatedAt: c.updated_at,
+      tasks: c.tasks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        priority: t.priority,
+        order: t.order,
+        pinned: t.pinned,
+        columnId: t.column_id,
+        startDate: t.start_date,
+        endDate: t.end_date,
+        images: t.images,
+        createdAt: t.created_at,
+        updatedAt: t.updated_at,
+      })),
+    })),
+  }
+}
 
 export async function GET(
   request: Request,
@@ -14,22 +52,7 @@ export async function GET(
     const { boardId } = await params
     const userId = await getUserId()
     
-    let board = await prisma.board.findFirst({
-      where: {
-        id: boardId,
-        userId,
-      },
-      include: {
-        columns: {
-          orderBy: { order: 'asc' },
-          include: {
-            tasks: {
-              orderBy: { order: 'asc' },
-            },
-          },
-        },
-      },
-    })
+    let board = await findBoardWithDetails(boardId, userId)
     
     if (!board) {
       return NextResponse.json(
@@ -39,21 +62,9 @@ export async function GET(
     }
 
     // Backfill colors for any columns that don't have one
-    if (board.columns.some((c: { color: string | null }) => !c.color)) {
+    if (board.columns.some((c) => !c.color)) {
       await backfillColumnColors([board.id])
-      board = await prisma.board.findFirst({
-        where: { id: boardId, userId },
-        include: {
-          columns: {
-            orderBy: { order: 'asc' },
-            include: {
-              tasks: {
-                orderBy: { order: 'asc' },
-              },
-            },
-          },
-        },
-      })
+      board = await findBoardWithDetails(boardId, userId)
       if (!board) {
         return NextResponse.json(
           { error: 'Board not found' },
@@ -62,11 +73,7 @@ export async function GET(
       }
     }
     
-    // Mask the PAT before returning to client
-    return NextResponse.json({
-      ...board,
-      jiraPat: board.jiraPat ? MASKED_PAT : null,
-    })
+    return NextResponse.json(mapBoardToCamelCase(board))
   } catch (error) {
     console.error('Error fetching board:', error)
     return NextResponse.json(
@@ -84,12 +91,7 @@ export async function DELETE(
     const { boardId } = await params
     const userId = await getUserId()
     
-    const board = await prisma.board.findFirst({
-      where: {
-        id: boardId,
-        userId,
-      },
-    })
+    const board = await findBoardOwnedBy(boardId, userId)
     
     if (!board) {
       return NextResponse.json(
@@ -98,9 +100,7 @@ export async function DELETE(
       )
     }
     
-    await prisma.board.delete({
-      where: { id: boardId },
-    })
+    await deleteBoard(boardId)
     
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -121,12 +121,7 @@ export async function PATCH(
     const userId = await getUserId()
     const body = await request.json()
     
-    const board = await prisma.board.findFirst({
-      where: {
-        id: boardId,
-        userId,
-      },
-    })
+    const board = await findBoardOwnedBy(boardId, userId)
     
     if (!board) {
       return NextResponse.json(
@@ -135,31 +130,19 @@ export async function PATCH(
       )
     }
     
-    const updatedBoard = await prisma.board.update({
-      where: { id: boardId },
-      data: {
-        ...(body.title !== undefined && { title: body.title }),
-        ...(body.subtitle !== undefined && { subtitle: body.subtitle }),
-        ...(body.jiraBaseUrl !== undefined && { jiraBaseUrl: body.jiraBaseUrl }),
-        ...(body.jiraPat !== undefined && { jiraPat: body.jiraPat }),
-      },
-      include: {
-        columns: {
-          orderBy: { order: 'asc' },
-          include: {
-            tasks: {
-              orderBy: { order: 'asc' },
-            },
-          },
-        },
-      },
+    await updateBoard(boardId, {
+      ...(body.title !== undefined && { title: body.title }),
+      ...(body.subtitle !== undefined && { subtitle: body.subtitle }),
+      ...(body.jiraBaseUrl !== undefined && { jiraBaseUrl: body.jiraBaseUrl }),
+      ...(body.jiraPat !== undefined && { jiraPat: body.jiraPat }),
     })
 
-    // Mask the PAT before returning to client - only indicate presence
-    return NextResponse.json({
-      ...updatedBoard,
-      jiraPat: updatedBoard.jiraPat ? MASKED_PAT : null,
-    })
+    const updatedBoard = await findBoardWithDetails(boardId, userId)
+    if (!updatedBoard) {
+      return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+    }
+
+    return NextResponse.json(mapBoardToCamelCase(updatedBoard))
   } catch (error) {
     console.error('Error updating board:', error)
     return NextResponse.json(
