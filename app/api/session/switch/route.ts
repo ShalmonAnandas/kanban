@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import prisma from '@/lib/prisma'
+import { findUserById } from '@/lib/db-queries'
 import { USER_COOKIE_NAME } from '@/lib/session'
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
@@ -16,8 +16,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // Validate userId format (cuid)
-    if (!/^c[a-z0-9]{20,}$/i.test(userId)) {
+    // Validate userId format (cuid or uuid)
+    if (!/^[a-z0-9-]{20,}$/i.test(userId)) {
       return NextResponse.json(
         { error: 'Invalid user identifier format' },
         { status: 400 }
@@ -25,9 +25,7 @@ export async function POST(request: Request) {
     }
 
     // Check if the user exists
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    })
+    const user = await findUserById(userId)
 
     if (!user) {
       return NextResponse.json(

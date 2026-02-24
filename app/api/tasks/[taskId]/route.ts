@@ -1,8 +1,25 @@
 import { NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { findTaskOwnedBy, updateTask as dbUpdateTask, deleteTask as dbDeleteTask } from '@/lib/db-queries'
 import { getUserId } from '@/lib/session'
 
 type Params = Promise<{ taskId: string }>
+
+function mapTaskToCamelCase(task: NonNullable<Awaited<ReturnType<typeof findTaskOwnedBy>>>) {
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    priority: task.priority,
+    order: task.order,
+    pinned: task.pinned,
+    columnId: task.column_id,
+    startDate: task.start_date,
+    endDate: task.end_date,
+    images: task.images,
+    createdAt: task.created_at,
+    updatedAt: task.updated_at,
+  }
+}
 
 export async function PATCH(
   request: Request,
@@ -14,16 +31,7 @@ export async function PATCH(
     const body = await request.json()
     
     // Verify task belongs to user
-    const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        column: {
-          board: {
-            userId,
-          },
-        },
-      },
-    })
+    const task = await findTaskOwnedBy(taskId, userId)
     
     if (!task) {
       return NextResponse.json(
@@ -32,20 +40,17 @@ export async function PATCH(
       )
     }
     
-    const updatedTask = await prisma.task.update({
-      where: { id: taskId },
-      data: {
-        ...(body.title !== undefined && { title: body.title }),
-        ...(body.description !== undefined && { description: body.description }),
-        ...(body.order !== undefined && { order: body.order }),
-        ...(body.columnId !== undefined && { columnId: body.columnId }),
-        ...(body.priority !== undefined && { priority: body.priority }),
-        ...(body.pinned !== undefined && { pinned: body.pinned }),
-        ...(Array.isArray(body.images) && { images: body.images }),
-      },
+    const updatedTask = await dbUpdateTask(taskId, {
+      ...(body.title !== undefined && { title: body.title }),
+      ...(body.description !== undefined && { description: body.description }),
+      ...(body.order !== undefined && { order: body.order }),
+      ...(body.columnId !== undefined && { columnId: body.columnId }),
+      ...(body.priority !== undefined && { priority: body.priority }),
+      ...(body.pinned !== undefined && { pinned: body.pinned }),
+      ...(Array.isArray(body.images) && { images: body.images }),
     })
     
-    return NextResponse.json(updatedTask)
+    return NextResponse.json(mapTaskToCamelCase(updatedTask))
   } catch (error) {
     console.error('Error updating task:', error)
     return NextResponse.json(
@@ -64,16 +69,7 @@ export async function DELETE(
     const userId = await getUserId()
     
     // Verify task belongs to user
-    const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        column: {
-          board: {
-            userId,
-          },
-        },
-      },
-    })
+    const task = await findTaskOwnedBy(taskId, userId)
     
     if (!task) {
       return NextResponse.json(
@@ -82,9 +78,7 @@ export async function DELETE(
       )
     }
     
-    await prisma.task.delete({
-      where: { id: taskId },
-    })
+    await dbDeleteTask(taskId)
     
     return NextResponse.json({ success: true })
   } catch (error) {

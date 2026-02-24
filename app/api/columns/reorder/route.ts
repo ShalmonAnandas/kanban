@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { findBoardOwnedBy, findColumnsByBoardIdAndIds, setColumnOrder } from '@/lib/db-queries'
 import { getUserId } from '@/lib/session'
 
 export async function POST(request: Request) {
@@ -15,9 +15,7 @@ export async function POST(request: Request) {
     }
 
     // Verify board belongs to user
-    const board = await prisma.board.findFirst({
-      where: { id: boardId, userId },
-    })
+    const board = await findBoardOwnedBy(boardId, userId)
 
     if (!board) {
       return NextResponse.json(
@@ -27,9 +25,7 @@ export async function POST(request: Request) {
     }
 
     // Verify all columns belong to this board
-    const columns = await prisma.column.findMany({
-      where: { boardId, id: { in: columnIds } },
-    })
+    const columns = await findColumnsByBoardIdAndIds(boardId, columnIds)
 
     if (columns.length !== columnIds.length) {
       return NextResponse.json(
@@ -38,13 +34,10 @@ export async function POST(request: Request) {
       )
     }
 
-    // Update all column orders in a transaction
-    await prisma.$transaction(
+    // Update all column orders
+    await Promise.all(
       columnIds.map((id: string, index: number) =>
-        prisma.column.update({
-          where: { id },
-          data: { order: index },
-        })
+        setColumnOrder(id, index)
       )
     )
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { findColumnOwnedBy, updateColumn as dbUpdateColumn, deleteColumn as dbDeleteColumn } from '@/lib/db-queries'
 import { getUserId } from '@/lib/session'
 
 type Params = Promise<{ columnId: string }>
@@ -13,12 +13,7 @@ export async function PATCH(
     const userId = await getUserId()
     const body = await request.json()
 
-    const column = await prisma.column.findFirst({
-      where: {
-        id: columnId,
-        board: { userId },
-      },
-    })
+    const column = await findColumnOwnedBy(columnId, userId)
 
     if (!column) {
       return NextResponse.json(
@@ -27,17 +22,25 @@ export async function PATCH(
       )
     }
 
-    const updatedColumn = await prisma.column.update({
-      where: { id: columnId },
-      data: {
-        ...(body.title !== undefined && { title: body.title }),
-        ...(body.isStart !== undefined && { isStart: body.isStart }),
-        ...(body.isEnd !== undefined && { isEnd: body.isEnd }),
-        ...(body.color !== undefined && { color: body.color }),
-      },
+    const updatedColumn = await dbUpdateColumn(columnId, {
+      ...(body.title !== undefined && { title: body.title }),
+      ...(body.isStart !== undefined && { isStart: body.isStart }),
+      ...(body.isEnd !== undefined && { isEnd: body.isEnd }),
+      ...(body.color !== undefined && { color: body.color }),
     })
 
-    return NextResponse.json(updatedColumn)
+    // Map to camelCase
+    return NextResponse.json({
+      id: updatedColumn.id,
+      title: updatedColumn.title,
+      order: updatedColumn.order,
+      color: updatedColumn.color,
+      isStart: updatedColumn.is_start,
+      isEnd: updatedColumn.is_end,
+      boardId: updatedColumn.board_id,
+      createdAt: updatedColumn.created_at,
+      updatedAt: updatedColumn.updated_at,
+    })
   } catch (error) {
     console.error('Error updating column:', error)
     return NextResponse.json(
@@ -55,12 +58,7 @@ export async function DELETE(
     const { columnId } = await params
     const userId = await getUserId()
 
-    const column = await prisma.column.findFirst({
-      where: {
-        id: columnId,
-        board: { userId },
-      },
-    })
+    const column = await findColumnOwnedBy(columnId, userId)
 
     if (!column) {
       return NextResponse.json(
@@ -69,9 +67,7 @@ export async function DELETE(
       )
     }
 
-    await prisma.column.delete({
-      where: { id: columnId },
-    })
+    await dbDeleteColumn(columnId)
 
     return NextResponse.json({ success: true })
   } catch (error) {
