@@ -20,7 +20,6 @@ export async function GET() {
         },
       },
       orderBy: { createdAt: 'desc' },
-      cacheStrategy: { ttl: 30, swr: 60 },
     })
 
     // Backfill colors for any columns that don't have one
