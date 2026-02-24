@@ -16,33 +16,23 @@ import { getNeonDatabaseUrl, normalizePostgresUrl } from '@/lib/db'
  * so it can be safely re-run without duplicating data.
  */
 
-// Connect to old Prisma database (read-only)
+// Connect to old Prisma database (read-only).
+// Uses only PRISMA_DATABASE_URL to avoid accidentally connecting to the
+// same Neon database that the main app uses (DATABASE_URL, POSTGRES_URL, etc.).
 function getPrismaDb() {
-  const urlCandidates = [
-    process.env.PRISMA_DATABASE_URL,
-    process.env.DATABASE_URL,
-    process.env.POSTGRES_URL_NON_POOLING,
-    process.env.POSTGRES_URL,
-    process.env.POSTGRES_PRISMA_URL,
-  ].filter(Boolean) as string[]
-  if (urlCandidates.length === 0) {
-    throw new Error('No Prisma database URL configured (PRISMA_DATABASE_URL, DATABASE_URL, POSTGRES_URL_NON_POOLING, POSTGRES_URL, or POSTGRES_PRISMA_URL). A postgres:// or postgresql:// URL is required.')
-  }
-  for (const url of urlCandidates) {
-    const normalized = normalizePostgresUrl(url)
-    try {
-      const parsed = new URL(normalized)
-      if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
-        continue
-      }
-      return neon(normalized)
-    } catch (e) {
-      if (!(e instanceof TypeError)) {
-        throw e
-      }
+  const url = process.env.PRISMA_DATABASE_URL
+  if (!url) return null
+
+  const normalized = normalizePostgresUrl(url)
+  try {
+    const parsed = new URL(normalized)
+    if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
+      return null
     }
+    return neon(normalized)
+  } catch {
+    return null
   }
-  throw new Error('No valid Postgres database URL configured for migration. Ensure at least one configured URL uses postgres:// or postgresql://.')
 }
 
 // Connect to new Neon database (write)
@@ -77,6 +67,12 @@ export async function POST(request: Request) {
 
     const startTime = Date.now()
     const oldDb = getPrismaDb()
+    if (!oldDb) {
+      return NextResponse.json(
+        { message: 'Migration skipped: PRISMA_DATABASE_URL is not configured. Set it to the old database URL to enable migration.' },
+        { status: 200 }
+      )
+    }
     const newDb = getNeonDb()
 
     // Ensure schema exists in Neon
