@@ -1,13 +1,35 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 
+const NEON_URL_ENV_NAMES = [
+  'NEON_DATABASE_URL',
+  'NEON_POSTGRES_URL',
+  'NEON_DATABASE_URL_UNPOOLED',
+  'NEON_POSTGRES_URL_NON_POOLING',
+  'NEON_POSTGRES_URL_NO_SSL',
+] as const
+
+/**
+ * Resolves the Neon database URL from Vercel-provided environment variables.
+ * Tries pooled URLs first (better for serverless), then falls back to unpooled.
+ */
+export function getNeonDatabaseUrl(): string | undefined {
+  for (const name of NEON_URL_ENV_NAMES) {
+    if (process.env[name]) return process.env[name]
+  }
+  return undefined
+}
+
 let _sql: NeonQueryFunction<false, false> | null = null
 
 export function sql(strings: TemplateStringsArray, ...values: unknown[]) {
   if (!_sql) {
-    if (!process.env.NEON_DATABASE_URL) {
-      throw new Error('NEON_DATABASE_URL environment variable is not set')
+    const url = getNeonDatabaseUrl()
+    if (!url) {
+      throw new Error(
+        `No Neon database URL found. Set one of: ${NEON_URL_ENV_NAMES.join(', ')}`
+      )
     }
-    _sql = neon(process.env.NEON_DATABASE_URL)
+    _sql = neon(url)
   }
   return _sql(strings, ...values)
 }
@@ -20,7 +42,7 @@ let schemaInitialized = false
  */
 export async function ensureSchema(): Promise<void> {
   if (schemaInitialized) return
-  if (!process.env.NEON_DATABASE_URL) {
+  if (!getNeonDatabaseUrl()) {
     // During build, skip schema initialization
     return
   }
