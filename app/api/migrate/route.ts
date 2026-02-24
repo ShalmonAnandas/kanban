@@ -22,7 +22,21 @@ function getPrismaDb() {
   if (!url) {
     throw new Error('No Prisma database URL configured (PRISMA_DATABASE_URL, DATABASE_URL, or POSTGRES_URL)')
   }
-  return neon(normalizePostgresUrl(url))
+  const normalized = normalizePostgresUrl(url)
+  try {
+    const parsed = new URL(normalized)
+    if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
+      throw new Error(
+        `Prisma database URL has unsupported protocol "${parsed.protocol}". Expected postgresql://`
+      )
+    }
+  } catch (e) {
+    if (e instanceof TypeError) {
+      throw new Error('Prisma database URL is not a valid URL')
+    }
+    throw e
+  }
+  return neon(normalized)
 }
 
 // Connect to new Neon database (write)
