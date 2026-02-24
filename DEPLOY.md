@@ -51,15 +51,16 @@ After deploying:
 
 Vercel will automatically inject the following environment variables:
 - `POSTGRES_URL`
-- `POSTGRES_PRISMA_URL`
-- `POSTGRES_URL_NON_POOLING`
+- `DATABASE_URL`
 - `POSTGRES_URL_NO_SSL`
 - `POSTGRES_USER`
 - `POSTGRES_HOST`
 - `POSTGRES_PASSWORD`
 - `POSTGRES_DATABASE`
 
-The application uses `POSTGRES_PRISMA_URL` (pooled connection for runtime) and `POSTGRES_URL_NON_POOLING` (direct connection for migrations).
+The application uses `POSTGRES_URL` (pooled connection for runtime) and `DATABASE_URL` (direct connection for migrations/db push).
+
+> **Note**: In Vercel's environment, `POSTGRES_URL` is the pgbouncer-pooled URL used at runtime, and `DATABASE_URL` is the direct (non-pooled) connection used by Prisma CLI for schema operations.
 
 ### 4. Redeploy with Database Connection
 
@@ -97,7 +98,7 @@ You can add custom environment variables in project settings:
 npm run db:studio
 
 # Production (with connection string from Vercel)
-POSTGRES_PRISMA_URL="<your-vercel-postgres-url>" npm run db:studio
+POSTGRES_URL="<your-vercel-postgres-url>" DATABASE_URL="<your-vercel-postgres-direct-url>" npm run db:studio
 ```
 
 ### Run Migrations
@@ -126,7 +127,7 @@ npm run db:push
 
 ### Database Connection Issues
 
-1. Verify `POSTGRES_PRISMA_URL` is set in environment variables
+1. Verify `POSTGRES_URL` is set in environment variables
 2. Check database is running in Vercel Storage
 3. Redeploy to refresh connection
 
