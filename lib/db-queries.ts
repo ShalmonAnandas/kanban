@@ -234,11 +234,6 @@ export async function updateBoard(boardId: string, data: {
   if (data.jiraPat !== undefined) {
     await sql`UPDATE boards SET jira_pat = ${encryptNullable(data.jiraPat)}, updated_at = ${now} WHERE id = ${boardId}`
   }
-
-  // If nothing was updated, just touch updated_at
-  if (data.title === undefined && data.subtitle === undefined && data.jiraBaseUrl === undefined && data.jiraPat === undefined) {
-    await sql`UPDATE boards SET updated_at = ${now} WHERE id = ${boardId}`
-  }
 }
 
 export async function deleteBoard(boardId: string): Promise<void> {

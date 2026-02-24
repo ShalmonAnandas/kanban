@@ -60,6 +60,8 @@ export async function POST(request: Request) {
     await initSchema()
 
     // ─── Migrate Users ────────────────────────────────────────────────
+    // Note: Prisma may return columns as snake_case or camelCase depending on
+    // the driver/schema, so we use fallback patterns to handle both.
     const users = await oldDb`SELECT * FROM users`
     let usersInserted = 0
     for (const user of users) {

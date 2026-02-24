@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     }
 
     // Validate userId format (cuid or uuid)
-    if (!/^[a-z0-9-]{20,}$/i.test(userId)) {
+    if (!/^[a-zA-Z0-9-]{20,}$/.test(userId)) {
       return NextResponse.json(
         { error: 'Invalid user identifier format' },
         { status: 400 }
