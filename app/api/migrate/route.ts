@@ -32,7 +32,7 @@ function getPrismaDb() {
     }
   } catch (e) {
     if (e instanceof TypeError) {
-      throw new Error(`Prisma database URL is not a valid URL: ${url}`)
+      throw new Error('Prisma database URL is not a valid URL')
     }
     throw e
   }
