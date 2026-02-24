@@ -20,18 +20,18 @@ import { getNeonDatabaseUrl, normalizePostgresUrl } from '@/lib/db'
 // Uses only PRISMA_DATABASE_URL to avoid accidentally connecting to the
 // same Neon database that the main app uses (DATABASE_URL, POSTGRES_URL, etc.).
 function getPrismaDb() {
-  const url = process.env.PRISMA_DATABASE_URL
-  if (!url) return null
+  const rawUrl = process.env.PRISMA_DATABASE_URL?.trim()
+  if (!rawUrl) return { db: null, reason: 'missing' }
 
-  const normalized = normalizePostgresUrl(url)
+  const normalized = normalizePostgresUrl(rawUrl)
   try {
     const parsed = new URL(normalized)
     if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
-      return null
+      return { db: null, reason: 'unsupported protocol (expected postgres:// or postgresql://)' }
     }
-    return neon(normalized)
+    return { db: neon(normalized), reason: null }
   } catch {
-    return null
+    return { db: null, reason: 'invalid URL format' }
   }
 }
 
@@ -66,10 +66,14 @@ export async function POST(request: Request) {
     }
 
     const startTime = Date.now()
-    const oldDb = getPrismaDb()
+    const { db: oldDb, reason: prismaDbReason } = getPrismaDb()
     if (!oldDb) {
+      const message =
+        prismaDbReason === 'missing'
+          ? 'Migration skipped: PRISMA_DATABASE_URL is not configured. Set it to the old database URL (postgres:// or postgresql://) to enable migration.'
+          : `Migration skipped: PRISMA_DATABASE_URL is set but unusable (${prismaDbReason}). Set it to the old database URL (postgres:// or postgresql://) to enable migration.`
       return NextResponse.json(
-        { message: 'Migration skipped: PRISMA_DATABASE_URL is not configured. Set it to the old database URL to enable migration.' },
+        { message },
         { status: 200 }
       )
     }
