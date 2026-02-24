@@ -18,25 +18,31 @@ import { getNeonDatabaseUrl, normalizePostgresUrl } from '@/lib/db'
 
 // Connect to old Prisma database (read-only)
 function getPrismaDb() {
-  const url = process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL
-  if (!url) {
-    throw new Error('No Prisma database URL configured (PRISMA_DATABASE_URL, DATABASE_URL, or POSTGRES_URL)')
+  const urlCandidates = [
+    process.env.PRISMA_DATABASE_URL,
+    process.env.DATABASE_URL,
+    process.env.POSTGRES_URL_NON_POOLING,
+    process.env.POSTGRES_URL,
+    process.env.POSTGRES_PRISMA_URL,
+  ].filter(Boolean) as string[]
+  if (urlCandidates.length === 0) {
+    throw new Error('No Prisma database URL configured (PRISMA_DATABASE_URL, DATABASE_URL, POSTGRES_URL_NON_POOLING, POSTGRES_URL, or POSTGRES_PRISMA_URL). A postgres:// or postgresql:// URL is required.')
   }
-  const normalized = normalizePostgresUrl(url)
-  try {
-    const parsed = new URL(normalized)
-    if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
-      throw new Error(
-        `Prisma database URL has unsupported protocol "${parsed.protocol}". Expected postgresql://`
-      )
+  for (const url of urlCandidates) {
+    const normalized = normalizePostgresUrl(url)
+    try {
+      const parsed = new URL(normalized)
+      if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
+        continue
+      }
+      return neon(normalized)
+    } catch (e) {
+      if (!(e instanceof TypeError)) {
+        throw e
+      }
     }
-  } catch (e) {
-    if (e instanceof TypeError) {
-      throw new Error('Prisma database URL is not a valid URL')
-    }
-    throw e
   }
-  return neon(normalized)
+  throw new Error('No valid Postgres database URL configured for migration. Ensure at least one configured URL uses postgres:// or postgresql://.')
 }
 
 // Connect to new Neon database (write)
