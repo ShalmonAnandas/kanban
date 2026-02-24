@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
+import postgres from 'postgres'
 import { encrypt, encryptNullable } from '@/lib/encryption'
 import { initSchema } from '@/lib/db-schema'
 import { getNeonDatabaseUrl, normalizePostgresUrl } from '@/lib/db'
@@ -29,7 +30,7 @@ function getPrismaDb() {
     if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
       return { db: null, reason: 'unsupported protocol (expected postgres:// or postgresql://)' }
     }
-    return { db: neon(normalized), reason: null }
+    return { db: postgres(normalized, { ssl: 'require' }), reason: null }
   } catch {
     return { db: null, reason: 'invalid URL format' }
   }
