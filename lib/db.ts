@@ -9,12 +9,21 @@ const NEON_URL_ENV_NAMES = [
 ] as const
 
 /**
+ * Normalizes a Postgres connection string to use the `postgresql://` scheme
+ * required by the `neon()` driver (some providers emit `postgres://` instead).
+ */
+export function normalizePostgresUrl(url: string): string {
+  return url.replace(/^postgres:\/\//, 'postgresql://')
+}
+
+/**
  * Resolves the Neon database URL from Vercel-provided environment variables.
  * Tries pooled URLs first (better for serverless), then falls back to unpooled.
  */
 export function getNeonDatabaseUrl(): string | undefined {
   for (const name of NEON_URL_ENV_NAMES) {
-    if (process.env[name]) return process.env[name]
+    const val = process.env[name]
+    if (val) return normalizePostgresUrl(val)
   }
   return undefined
 }
