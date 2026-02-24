@@ -59,7 +59,7 @@ Vercel will automatically inject the following environment variables:
 - `POSTGRES_PASSWORD`
 - `POSTGRES_DATABASE`
 
-The application will use `POSTGRES_PRISMA_URL` or fallback to `DATABASE_URL`.
+The application uses `POSTGRES_PRISMA_URL` (pooled connection for runtime) and `POSTGRES_URL_NON_POOLING` (direct connection for migrations).
 
 ### 4. Redeploy with Database Connection
 
@@ -97,7 +97,7 @@ You can add custom environment variables in project settings:
 npm run db:studio
 
 # Production (with connection string from Vercel)
-DATABASE_URL="<your-vercel-postgres-url>" npm run db:studio
+POSTGRES_PRISMA_URL="<your-vercel-postgres-url>" npm run db:studio
 ```
 
 ### Run Migrations

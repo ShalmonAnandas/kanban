@@ -51,7 +51,8 @@ cp .env.example .env
 
 Edit `.env` with your database connection string:
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/kanban?schema=public"
+POSTGRES_PRISMA_URL="postgresql://user:password@localhost:5432/kanban?schema=public"
+POSTGRES_URL_NON_POOLING="postgresql://user:password@localhost:5432/kanban?schema=public"
 ```
 
 4. Generate Prisma client and push database schema:
@@ -78,7 +79,8 @@ For local development, you can use a local PostgreSQL instance:
 docker run --name postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres
 
 # Update .env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/kanban?schema=public"
+POSTGRES_PRISMA_URL="postgresql://postgres:postgres@localhost:5432/kanban?schema=public"
+POSTGRES_URL_NON_POOLING="postgresql://postgres:postgres@localhost:5432/kanban?schema=public"
 
 # Push schema to database
 npm run db:push
