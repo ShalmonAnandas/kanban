@@ -27,7 +27,7 @@ function getPrismaDb() {
   try {
     const parsed = new URL(normalized)
     if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
-      return { db: null, reason: `unsupported protocol (${parsed.protocol})` }
+      return { db: null, reason: 'unsupported protocol (expected postgres:// or postgresql://)' }
     }
     return { db: neon(normalized), reason: null }
   } catch {
@@ -68,14 +68,12 @@ export async function POST(request: Request) {
     const startTime = Date.now()
     const { db: oldDb, reason: prismaDbReason } = getPrismaDb()
     if (!oldDb) {
-      const reasonSuffix =
-        prismaDbReason && prismaDbReason !== 'missing'
-          ? ` It is set but unusable: ${prismaDbReason}.`
-          : ''
+      const message =
+        prismaDbReason === 'missing'
+          ? 'Migration skipped: PRISMA_DATABASE_URL is not configured. Set it to the old database URL (postgres:// or postgresql://) to enable migration.'
+          : `Migration skipped: PRISMA_DATABASE_URL is set but unusable (${prismaDbReason}). Set it to the old database URL (postgres:// or postgresql://) to enable migration.`
       return NextResponse.json(
-        {
-          message: `Migration skipped: PRISMA_DATABASE_URL is not configured.${reasonSuffix} Set it to the old database URL (postgres:// or postgresql://) to enable migration.`,
-        },
+        { message },
         { status: 200 }
       )
     }
