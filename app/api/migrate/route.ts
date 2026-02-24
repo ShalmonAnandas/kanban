@@ -26,7 +26,7 @@ function getPrismaDb() {
     process.env.POSTGRES_PRISMA_URL,
   ].filter(Boolean) as string[]
   if (urlCandidates.length === 0) {
-    throw new Error('No Prisma database URL configured (PRISMA_DATABASE_URL, DATABASE_URL, POSTGRES_URL_NON_POOLING, POSTGRES_URL, or POSTGRES_PRISMA_URL)')
+    throw new Error('No Prisma database URL configured (PRISMA_DATABASE_URL, DATABASE_URL, POSTGRES_URL_NON_POOLING, POSTGRES_URL, or POSTGRES_PRISMA_URL). A postgres:// or postgresql:// URL is required.')
   }
   for (const url of urlCandidates) {
     const normalized = normalizePostgresUrl(url)
@@ -42,7 +42,7 @@ function getPrismaDb() {
       }
     }
   }
-  throw new Error('No valid Postgres database URL configured for migration')
+  throw new Error('No valid Postgres database URL configured for migration. Ensure at least one configured URL uses postgres:// or postgresql://.')
 }
 
 // Connect to new Neon database (write)
