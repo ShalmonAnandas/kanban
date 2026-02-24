@@ -20,7 +20,7 @@ import { getNeonDatabaseUrl, normalizePostgresUrl } from '@/lib/db'
 // Uses only PRISMA_DATABASE_URL to avoid accidentally connecting to the
 // same Neon database that the main app uses (DATABASE_URL, POSTGRES_URL, etc.).
 function getPrismaDb() {
-  const rawUrl = process.env.PRISMA_DATABASE_URL?.trim()
+  const rawUrl = process.env.POSTGRES_URL?.trim()
   if (!rawUrl) return { db: null, reason: 'missing' }
 
   const normalized = normalizePostgresUrl(rawUrl)
