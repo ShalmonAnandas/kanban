@@ -1,11 +1,17 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 
-const NEON_URL_ENV_NAMES = [
+const DB_URL_ENV_NAMES = [
+  // Neon-specific env vars (set by some Vercel Neon integrations)
   'NEON_DATABASE_URL',
   'NEON_POSTGRES_URL',
   'NEON_DATABASE_URL_UNPOOLED',
   'NEON_POSTGRES_URL_NON_POOLING',
   'NEON_POSTGRES_URL_NO_SSL',
+  // Standard Vercel Postgres / Neon env vars
+  'POSTGRES_URL',
+  'DATABASE_URL',
+  'POSTGRES_URL_NON_POOLING',
+  'POSTGRES_PRISMA_URL',
 ] as const
 
 /**
@@ -17,13 +23,33 @@ export function normalizePostgresUrl(url: string): string {
 }
 
 /**
+ * Returns true if `url` looks like a valid Postgres connection string that
+ * the neon() driver will accept (postgresql:// or postgres:// with user, host
+ * and database path components).
+ */
+function isValidPostgresUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return (
+      (parsed.protocol === 'postgres:' || parsed.protocol === 'postgresql:') &&
+      !!parsed.hostname &&
+      !!parsed.pathname &&
+      parsed.pathname !== '/'
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
  * Resolves the Neon database URL from Vercel-provided environment variables.
  * Tries pooled URLs first (better for serverless), then falls back to unpooled.
+ * Skips env vars whose values are not valid Postgres connection strings.
  */
 export function getNeonDatabaseUrl(): string | undefined {
-  for (const name of NEON_URL_ENV_NAMES) {
+  for (const name of DB_URL_ENV_NAMES) {
     const val = process.env[name]
-    if (val) return normalizePostgresUrl(val)
+    if (val && isValidPostgresUrl(val)) return normalizePostgresUrl(val)
   }
   return undefined
 }
@@ -35,7 +61,7 @@ export function sql(strings: TemplateStringsArray, ...values: unknown[]) {
     const url = getNeonDatabaseUrl()
     if (!url) {
       throw new Error(
-        `No Neon database URL found. Set one of: ${NEON_URL_ENV_NAMES.join(', ')}`
+        `No Neon database URL found. Set one of: ${DB_URL_ENV_NAMES.join(', ')}`
       )
     }
     _sql = neon(url)
