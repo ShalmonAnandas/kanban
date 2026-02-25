@@ -1294,6 +1294,161 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     [board.columns, columnSorts, globalSort]
   )
 
+  // Export board as a pretty Excel file
+  const [exporting, setExporting] = useState(false)
+  const handleExportExcel = async () => {
+    setExporting(true)
+    try {
+      const ExcelJS = (await import('exceljs')).default
+      const workbook = new ExcelJS.Workbook()
+      workbook.creator = 'Kanban Board'
+      workbook.created = new Date()
+
+      const PRIORITY_COLORS: Record<string, string> = {
+        critical: 'FFFFE0E0',
+        high: 'FFFFF3E0',
+        medium: 'FFE3F2FD',
+        low: 'FFE8F5E9',
+        nice_to_have: 'FFF5F5F5',
+      }
+      const PRIORITY_FONT_COLORS: Record<string, string> = {
+        critical: 'FFC62828',
+        high: 'FFE65100',
+        medium: 'FF1565C0',
+        low: 'FF2E7D32',
+        nice_to_have: 'FF616161',
+      }
+
+      for (const column of sortedColumns) {
+        const sheetName = column.title.replace(/[*?:/\\[\]]/g, '').slice(0, 31) || 'Sheet'
+        const sheet = workbook.addWorksheet(sheetName)
+
+        // Set column widths
+        sheet.columns = [
+          { header: '#', key: 'num', width: 5 },
+          { header: 'Task', key: 'title', width: 40 },
+          { header: 'Priority', key: 'priority', width: 14 },
+          { header: 'Description', key: 'description', width: 50 },
+          { header: 'Subtasks', key: 'subtasks', width: 40 },
+          { header: 'Start Date', key: 'startDate', width: 14 },
+          { header: 'End Date', key: 'endDate', width: 14 },
+          { header: 'Pinned', key: 'pinned', width: 9 },
+          { header: 'Created', key: 'created', width: 14 },
+        ]
+
+        // Parse column hex color for header fill
+        const colColor = column.color
+        let headerFillColor = 'FF7C3AED' // default violet
+        if (colColor) {
+          const hex = colColor.replace('#', '')
+          if (/^[0-9A-Fa-f]{6}$/.test(hex)) {
+            headerFillColor = 'FF' + hex.toUpperCase()
+          }
+        }
+
+        // Style header row
+        const headerRow = sheet.getRow(1)
+        headerRow.eachCell((cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerFillColor } }
+          cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }
+          cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+            bottom: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+            left: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+            right: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+          }
+        })
+        headerRow.height = 24
+
+        // Add task rows
+        column.tasks.forEach((task, idx) => {
+          const subtaskText = task.subtasks
+            .map((st) => `${st.done ? '✓' : '○'} ${st.title}`)
+            .join('\n')
+
+          const formatDateStr = (iso: string | null) => {
+            if (!iso) return ''
+            return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+          }
+
+          // Strip HTML tags from description for plain text
+          const plainDesc = task.description
+            ? task.description.replace(/<[^>]+>/g, '').trim()
+            : ''
+
+          const row = sheet.addRow({
+            num: idx + 1,
+            title: task.title,
+            priority: task.priority.replace('_', ' '),
+            description: plainDesc,
+            subtasks: subtaskText,
+            startDate: formatDateStr(task.startDate),
+            endDate: formatDateStr(task.endDate),
+            pinned: task.pinned ? '📌' : '',
+            created: formatDateStr(task.createdAt),
+          })
+
+          // Style each cell
+          row.eachCell((cell) => {
+            cell.alignment = { vertical: 'top', wrapText: true }
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+              bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+              left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+              right: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+            }
+            cell.font = { size: 10 }
+          })
+
+          // Alternate row background
+          if (idx % 2 === 0) {
+            row.eachCell((cell) => {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAFAFA' } }
+            })
+          }
+
+          // Priority cell color
+          const prioCell = row.getCell('priority')
+          const prioKey = task.priority
+          if (PRIORITY_COLORS[prioKey]) {
+            prioCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIORITY_COLORS[prioKey] } }
+            prioCell.font = { bold: true, size: 10, color: { argb: PRIORITY_FONT_COLORS[prioKey] } }
+            prioCell.alignment = { vertical: 'top', horizontal: 'center' }
+          }
+
+          // Title cell bold
+          row.getCell('title').font = { bold: true, size: 10 }
+        })
+
+        // Auto-filter
+        sheet.autoFilter = {
+          from: { row: 1, column: 1 },
+          to: { row: 1, column: 9 },
+        }
+
+        // Freeze header row
+        sheet.views = [{ state: 'frozen', ySplit: 1 }]
+      }
+
+      // Generate and download
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${board.title.replace(/[^a-zA-Z0-9 ]/g, '').trim() || 'board'}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Failed to export Excel:', error)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <>
       {/* Header actions */}
@@ -1313,6 +1468,24 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
         {hasJiraPat && (
           <span className="hidden sm:inline text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded font-medium border border-emerald-200 dark:border-emerald-800 shrink-0">JIRA</span>
         )}
+
+        {/* Export Excel button */}
+        <button
+          onClick={handleExportExcel}
+          disabled={exporting}
+          className="p-2 sm:px-3 sm:py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400 font-medium inline-flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+          aria-label="Export to Excel"
+          title="Export board as Excel file"
+        >
+          {exporting ? (
+            <Spinner size="sm" className="text-gray-400" />
+          ) : (
+            <svg className="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          )}
+          <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Export'}</span>
+        </button>
 
         {/* Search field */}
         <div className="relative flex-1 min-w-0" ref={searchRef}>
