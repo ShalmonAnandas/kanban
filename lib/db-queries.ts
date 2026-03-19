@@ -623,7 +623,16 @@ export async function findTaskMovementsByTaskId(taskId: string): Promise<DbTaskM
 // ─── Bulk Operations ────────────────────────────────────────────────────────
 
 export async function moveAllTasksToColumn(fromColumnId: string, toColumnId: string, startOrder: number): Promise<void> {
-  await sql`UPDATE tasks SET column_id = ${toColumnId}, "order" = "order" + ${startOrder} WHERE column_id = ${fromColumnId}`
+  // Reassign orders sequentially starting from startOrder
+  await sql`
+    UPDATE tasks SET column_id = ${toColumnId},
+      "order" = ${startOrder} + sub.rn - 1
+    FROM (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY "order" ASC) AS rn
+      FROM tasks WHERE column_id = ${fromColumnId}
+    ) sub
+    WHERE tasks.id = sub.id
+  `
 }
 
 export async function findTaskByTitleInBoard(title: string, boardId: string): Promise<DbTask | null> {
