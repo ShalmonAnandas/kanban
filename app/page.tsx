@@ -97,6 +97,7 @@ async function BoardContent() {
         startDate: task.start_date || null,
         endDate: task.end_date || null,
         images: task.images || [],
+        videos: task.videos || [],
         createdAt: task.created_at,
         updatedAt: task.updated_at,
         subtasks: (task.subtasks || []).map((st: typeof task.subtasks[number]) => ({

@@ -5,7 +5,7 @@ import { getUserId } from '@/lib/session'
 export async function POST(request: Request) {
   try {
     const userId = await getUserId()
-    const { title, description, columnId, priority, images } = await request.json()
+    const { title, description, columnId, priority, images, videos } = await request.json()
     
     if (!title || !columnId) {
       return NextResponse.json(
@@ -43,6 +43,7 @@ export async function POST(request: Request) {
       order: lastOrder + 1,
       ...(column.is_start && { startDate: new Date() }),
       ...(Array.isArray(images) && { images }),
+      ...(Array.isArray(videos) && { videos }),
     })
 
     // Map to camelCase
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
       startDate: task.start_date,
       endDate: task.end_date,
       images: task.images,
+      videos: task.videos || [],
       createdAt: task.created_at,
       updatedAt: task.updated_at,
     }, { status: 201 })

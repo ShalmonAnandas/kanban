@@ -50,6 +50,7 @@ export type Task = {
   startDate: string | null
   endDate: string | null
   images: string[]
+  videos: string[]
   subtasks: SubTask[]
   createdAt: string
   updatedAt: string
@@ -213,6 +214,32 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   const [addTaskUploadingImage, setAddTaskUploadingImage] = useState(false)
   const [addTaskEditorMode, setAddTaskEditorMode] = useState<'markdown' | 'rich'>('rich')
 
+  // Video upload states
+  const [editVideos, setEditVideos] = useState<string[]>([])
+  const [uploadingVideo, setUploadingVideo] = useState(false)
+  const [addTaskVideos, setAddTaskVideos] = useState<string[]>([])
+  const [addTaskUploadingVideo, setAddTaskUploadingVideo] = useState(false)
+
+  // Subtasks during task creation
+  const [addTaskSubtasks, setAddTaskSubtasks] = useState<{ title: string }[]>([])
+  const [addTaskNewSubtaskTitle, setAddTaskNewSubtaskTitle] = useState('')
+
+  // Selection mode for bulk operations
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
+  // Merge column
+  const [mergeSourceColumnId, setMergeSourceColumnId] = useState<string | null>(null)
+
+  // Task movement timeline
+  type TaskMovement = { id: string; taskId: string; fromColumnTitle: string; toColumnTitle: string; movedAt: string }
+  const [taskMovements, setTaskMovements] = useState<TaskMovement[]>([])
+  const [loadingMovements, setLoadingMovements] = useState(false)
+
+  // Duplicate detection toast
+  const [duplicateToast, setDuplicateToast] = useState<string | null>(null)
+
   // Global loading for reorder
   const [reordering, setReordering] = useState(false)
 
@@ -364,8 +391,17 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     setEditDescription(task.description || '')
     setEditPriority(task.priority)
     setEditImages(task.images || [])
+    setEditVideos(task.videos || [])
     setNewSubtaskTitle('')
     setEditorMode('markdown')
+    // Fetch movements
+    setLoadingMovements(true)
+    setTaskMovements([])
+    fetch(`/api/tasks/${task.id}/movements`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setTaskMovements(Array.isArray(data) ? data : []))
+      .catch(() => setTaskMovements([]))
+      .finally(() => setLoadingMovements(false))
   }
 
   // Switch to edit mode
@@ -376,6 +412,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     setEditDescription(task.description || '')
     setEditPriority(task.priority)
     setEditImages(task.images || [])
+    setEditVideos(task.videos || [])
     setNewSubtaskTitle('')
   }
 
@@ -383,8 +420,10 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     setSelectedTask(null)
     setTaskModalMode('view')
     setEditImages([])
+    setEditVideos([])
     setNewSubtaskTitle('')
     setEditorMode('markdown')
+    setTaskMovements([])
   }
 
   const handleSaveTask = async () => {
@@ -399,6 +438,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
           description: editDescription || null,
           priority: editPriority,
           images: editImages,
+          videos: editVideos,
         }),
       })
       if (response.ok) {
@@ -819,8 +859,8 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     }
   }
 
-  const handleCreateTask = async (opts: { columnId: string; title: string; priority: string; description?: string | null; images?: string[] }) => {
-    const { columnId, title, priority, description, images } = opts
+  const handleCreateTask = async (opts: { columnId: string; title: string; priority: string; description?: string | null; images?: string[]; videos?: string[] }) => {
+    const { columnId, title, priority, description, images, videos } = opts
     // Handle #jira prefix for bulk ticket creation (client-side)
     if (title.startsWith('#jira ')) {
       const jiraBaseUrl = board.jiraBaseUrl
@@ -921,11 +961,22 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       return
     }
 
-    // Regular task creation
+    // Regular task creation - check for duplicates first
+    const existingTask = board.columns.flatMap((c) => c.tasks).find(
+      (t) => t.title.toLowerCase() === title.toLowerCase()
+    )
+    if (existingTask) {
+      setDuplicateToast(`A task with title "${title}" already exists`)
+      setTimeout(() => setDuplicateToast(null), 4000)
+      // Open the existing task instead of creating a new one
+      openTaskModal(existingTask)
+      return
+    }
+
     const response = await fetch('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, columnId, priority, description: description || null, images: images || [] }),
+      body: JSON.stringify({ title, columnId, priority, description: description || null, images: images || [], videos: videos || [] }),
     })
 
     if (response.ok) {
@@ -997,6 +1048,33 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     }
   }
 
+  // Video upload handler
+  const handleVideoUpload = async (
+    file: File,
+    setVideos: React.Dispatch<React.SetStateAction<string[]>>,
+    setUploading: React.Dispatch<React.SetStateAction<boolean>>
+  ) => {
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      if (response.ok) {
+        const { url } = await response.json()
+        setVideos((prev) => [...prev, url])
+      } else {
+        console.error('Failed to upload video')
+      }
+    } catch (error) {
+      console.error('Failed to upload video:', error)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   // Open add task modal
   const openAddTaskModal = (columnId: string) => {
     setAddTaskColumnId(columnId)
@@ -1004,6 +1082,9 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     setAddTaskDescription('')
     setAddTaskPriority('medium')
     setAddTaskImages([])
+    setAddTaskVideos([])
+    setAddTaskSubtasks([])
+    setAddTaskNewSubtaskTitle('')
   }
 
   const closeAddTaskModal = () => {
@@ -1012,6 +1093,9 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     setAddTaskDescription('')
     setAddTaskPriority('medium')
     setAddTaskImages([])
+    setAddTaskVideos([])
+    setAddTaskSubtasks([])
+    setAddTaskNewSubtaskTitle('')
   }
 
   const handleAddTaskSubmit = async () => {
@@ -1024,10 +1108,95 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
         priority: addTaskPriority,
         description: addTaskDescription || null,
         images: addTaskImages,
+        videos: addTaskVideos,
       })
+      // Create subtasks if any were added during creation
+      if (addTaskSubtasks.length > 0) {
+        // Find the newly created task (last task in the column)
+        const col = board.columns.find((c) => c.id === addTaskColumnId)
+        const lastTask = col?.tasks[col.tasks.length - 1]
+        if (lastTask) {
+          for (const st of addTaskSubtasks) {
+            if (st.title.trim()) {
+              await handleAddSubtask(lastTask.id, st.title.trim())
+            }
+          }
+        }
+      }
       closeAddTaskModal()
     } finally {
       setCreatingTask(false)
+    }
+  }
+
+  // Bulk delete handler
+  const handleBulkDelete = async () => {
+    if (selectedTaskIds.size === 0) return
+    setBulkDeleting(true)
+    try {
+      const ids = Array.from(selectedTaskIds)
+      const response = await fetch('/api/tasks/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskIds: ids }),
+      })
+      if (response.ok) {
+        setBoard((prev) => ({
+          ...prev,
+          columns: prev.columns.map((col) => ({
+            ...col,
+            tasks: col.tasks.filter((t) => !selectedTaskIds.has(t.id)),
+          })),
+        }))
+        setSelectedTaskIds(new Set())
+        setSelectionMode(false)
+      }
+    } catch (error) {
+      console.error('Failed to bulk delete:', error)
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
+  // Selection toggle handler
+  const handleSelectTask = (taskId: string) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(taskId)) {
+        next.delete(taskId)
+      } else {
+        next.add(taskId)
+      }
+      return next
+    })
+  }
+
+  // Merge column handler
+  const handleMergeColumn = async (fromColumnId: string, toColumnId: string) => {
+    try {
+      const response = await fetch('/api/columns/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromColumnId, toColumnId }),
+      })
+      if (response.ok) {
+        // Move tasks from source to target in local state and remove source column
+        setBoard((prev) => {
+          const fromCol = prev.columns.find((c) => c.id === fromColumnId)
+          const toCol = prev.columns.find((c) => c.id === toColumnId)
+          if (!fromCol || !toCol) return prev
+          const mergedTasks = [...toCol.tasks, ...fromCol.tasks.map((t, i) => ({ ...t, columnId: toColumnId, order: toCol.tasks.length + i }))]
+          return {
+            ...prev,
+            columns: prev.columns
+              .filter((c) => c.id !== fromColumnId)
+              .map((c) => c.id === toColumnId ? { ...c, tasks: mergedTasks } : c),
+          }
+        })
+        setMergeSourceColumnId(null)
+      }
+    } catch (error) {
+      console.error('Failed to merge columns:', error)
     }
   }
 
@@ -1334,6 +1503,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
           { header: 'End Date', key: 'endDate', width: 14 },
           { header: 'Pinned', key: 'pinned', width: 9 },
           { header: 'Created', key: 'created', width: 14 },
+          { header: 'Videos', key: 'videos', width: 14 },
         ]
 
         // Parse column hex color for header fill
@@ -1387,6 +1557,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             endDate: formatDateStr(task.endDate),
             pinned: task.pinned ? '📌' : '',
             created: formatDateStr(task.createdAt),
+            videos: (task.videos || []).length > 0 ? `${task.videos.length} video(s)` : '',
           })
 
           // Style each cell
@@ -1424,7 +1595,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
         // Auto-filter
         sheet.autoFilter = {
           from: { row: 1, column: 1 },
-          to: { row: 1, column: 9 },
+          to: { row: 1, column: 10 },
         }
 
         // Freeze header row
@@ -1487,6 +1658,38 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
           <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Export'}</span>
         </button>
 
+        {/* Selection mode toggle */}
+        <button
+          onClick={() => { setSelectionMode((v) => !v); setSelectedTaskIds(new Set()) }}
+          className={`p-2 sm:px-3 sm:py-1.5 text-xs border rounded-lg transition-colors font-medium inline-flex items-center gap-1.5 shrink-0 ${
+            selectionMode
+              ? 'bg-violet-50 dark:bg-violet-900/30 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400'
+              : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+          }`}
+          aria-label="Toggle selection mode"
+          title="Toggle selection mode for bulk operations"
+        >
+          <svg className="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+          <span className="hidden sm:inline">{selectionMode ? 'Cancel' : 'Select'}</span>
+        </button>
+        {selectionMode && selectedTaskIds.size > 0 && (
+          <button
+            onClick={handleBulkDelete}
+            disabled={bulkDeleting}
+            className="p-2 sm:px-3 sm:py-1.5 text-xs bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors font-medium inline-flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            aria-label="Delete selected tasks"
+          >
+            {bulkDeleting ? <Spinner size="sm" className="text-red-500" /> : (
+              <svg className="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            )}
+            <span className="hidden sm:inline">Delete {selectedTaskIds.size}</span>
+          </button>
+        )}
+
         {/* Search field */}
         <div className="relative flex-1 min-w-0" ref={searchRef}>
           <div className="relative">
@@ -1526,7 +1729,9 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   >
                     <div className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{task.title}</div>
                     {task.description && (
-                      <div className="text-[10px] text-gray-400 truncate mt-0.5">{task.description.slice(0, 100)}</div>
+                      <div className="text-[10px] text-gray-400 truncate mt-0.5">
+                        <MarkdownRenderer content={task.description.slice(0, 100)} />
+                      </div>
                     )}
                     {task.subtasks?.some(st => st.title.toLowerCase().includes(searchQuery.toLowerCase())) && (
                       <div className="text-[10px] text-violet-500 mt-0.5">
@@ -1769,6 +1974,23 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
         </div>
       )}
 
+      {/* Duplicate detection toast */}
+      {duplicateToast && (
+        <div className="fixed top-4 right-4 z-50" role="alert" aria-live="polite">
+          <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg px-3 py-2 shadow-lg">
+            <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <span className="text-xs text-amber-800 dark:text-amber-300 font-medium">{duplicateToast}</span>
+            <button onClick={() => setDuplicateToast(null)} className="text-amber-400 hover:text-amber-600 ml-2">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -1792,6 +2014,11 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 onSortChange={handleColumnSortChange}
                 sortConfig={columnSorts[column.id] || globalSort || undefined}
                 isOver={activeColumnId === column.id}
+                selectionMode={selectionMode}
+                selectedTaskIds={selectedTaskIds}
+                onSelectTask={handleSelectTask}
+                onMergeColumn={handleMergeColumn}
+                allColumns={board.columns}
               />
             ))}
 
@@ -1878,6 +2105,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 onTogglePin={noop}
                 onSortChange={noop}
                 isOverlay
+                allColumns={[]}
               />
             </div>
           ) : null}
@@ -1929,6 +2157,17 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                     <div className="flex flex-wrap gap-2 mb-3">
                       {selectedTask.images.map((url, idx) => (
                         <Image key={idx} src={url} alt={`Attachment ${idx + 1}`} width={80} height={80} className="w-20 h-20 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {selectedTask.videos && selectedTask.videos.length > 0 && (
+                  <>
+                    <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Videos</label>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {selectedTask.videos.map((url, idx) => (
+                        <video key={idx} src={url} controls className="w-48 rounded-lg border border-gray-200" />
                       ))}
                     </div>
                   </>
@@ -1990,6 +2229,30 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                       Add
                     </button>
                   </div>
+                </div>
+
+                {/* Task Movement Timeline */}
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Movement Timeline</label>
+                <div className="mb-3">
+                  {loadingMovements ? (
+                    <div className="flex items-center gap-2 text-xs text-gray-400"><Spinner size="sm" className="text-gray-400" /> Loading...</div>
+                  ) : taskMovements.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">No movements recorded</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {taskMovements.map((m) => (
+                        <div key={m.id} className="flex items-center gap-2 text-[10px] text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-md px-2 py-1.5">
+                          <svg className="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                          </svg>
+                          <span className="font-medium">{m.fromColumnTitle}</span>
+                          <span className="text-gray-300 dark:text-gray-600">→</span>
+                          <span className="font-medium">{m.toColumnTitle}</span>
+                          <span className="text-gray-400 ml-auto">{formatDateDisplay(m.movedAt)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end mt-1">
@@ -2106,6 +2369,49 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   </label>
                 </div>
 
+                {/* Video upload (edit mode) */}
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Videos</label>
+                <div className="mb-3">
+                  {editVideos.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {editVideos.map((url, idx) => (
+                        <div key={idx} className="relative group">
+                          <video src={url} className="w-32 h-20 object-cover rounded-lg border border-gray-200" />
+                          <button
+                            type="button"
+                            onClick={() => setEditVideos((prev) => prev.filter((_, i) => i !== idx))}
+                            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label="Remove video"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
+                    {uploadingVideo ? <Spinner size="sm" className="text-violet-500" /> : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                    {uploadingVideo ? 'Uploading…' : 'Upload video'}
+                    <input
+                      type="file"
+                      accept="video/mp4,video/webm,video/quicktime"
+                      className="hidden"
+                      disabled={uploadingVideo}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          handleVideoUpload(file, setEditVideos, setUploadingVideo)
+                          e.target.value = ''
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
                 {(selectedTask.startDate || selectedTask.endDate) && (
                   <div className="flex gap-3 mb-3 text-[10px] text-gray-500">
                     {selectedTask.startDate && (
@@ -2130,7 +2436,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   </button>
                   <button
                     onClick={handleSaveTask}
-                    disabled={savingTask || uploadingImage}
+                    disabled={savingTask || uploadingImage || uploadingVideo}
                     className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
                   >
                     {savingTask && <Spinner size="sm" className="text-white" />}
@@ -2255,6 +2561,98 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               </label>
             </div>
 
+            {/* Video upload (add task modal) */}
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Videos</label>
+            <div className="mb-3">
+              {addTaskVideos.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {addTaskVideos.map((url, idx) => (
+                    <div key={idx} className="relative group">
+                      <video src={url} className="w-32 h-20 object-cover rounded-lg border border-gray-200" />
+                      <button
+                        type="button"
+                        onClick={() => setAddTaskVideos((prev) => prev.filter((_, i) => i !== idx))}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Remove video"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
+                {addTaskUploadingVideo ? <Spinner size="sm" className="text-violet-500" /> : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+                {addTaskUploadingVideo ? 'Uploading…' : 'Upload video'}
+                <input
+                  type="file"
+                  accept="video/mp4,video/webm,video/quicktime"
+                  className="hidden"
+                  disabled={addTaskUploadingVideo}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      handleVideoUpload(file, setAddTaskVideos, setAddTaskUploadingVideo)
+                      e.target.value = ''
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            {/* Subtasks during creation */}
+            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Subtasks</label>
+            <div className="mb-3 space-y-1">
+              {addTaskSubtasks.map((st, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-xs text-gray-700 dark:text-gray-300 flex-1">{st.title}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAddTaskSubtasks((prev) => prev.filter((_, i) => i !== idx))}
+                    className="text-gray-300 hover:text-red-500 transition-colors p-0.5"
+                    aria-label="Remove subtask"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={addTaskNewSubtaskTitle}
+                  onChange={(e) => setAddTaskNewSubtaskTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && addTaskNewSubtaskTitle.trim()) {
+                      e.preventDefault()
+                      setAddTaskSubtasks((prev) => [...prev, { title: addTaskNewSubtaskTitle.trim() }])
+                      setAddTaskNewSubtaskTitle('')
+                    }
+                  }}
+                  placeholder="Add subtask..."
+                  className="flex-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded text-xs text-gray-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (addTaskNewSubtaskTitle.trim()) {
+                      setAddTaskSubtasks((prev) => [...prev, { title: addTaskNewSubtaskTitle.trim() }])
+                      setAddTaskNewSubtaskTitle('')
+                    }
+                  }}
+                  disabled={!addTaskNewSubtaskTitle.trim()}
+                  className="px-2 py-1 bg-violet-500 text-white rounded text-xs hover:bg-violet-600 transition-colors disabled:opacity-50"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
             <div className="flex justify-end gap-2 mt-1">
               <button
                 onClick={closeAddTaskModal}
@@ -2264,7 +2662,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               </button>
               <button
                 onClick={handleAddTaskSubmit}
-                disabled={creatingTask || addTaskUploadingImage || !addTaskTitle.trim()}
+                disabled={creatingTask || addTaskUploadingImage || addTaskUploadingVideo || !addTaskTitle.trim()}
                 className="px-3 py-1.5 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-xs transition-colors disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
               >
                 {creatingTask && <Spinner size="sm" className="text-white" />}

@@ -16,6 +16,7 @@ function mapTaskToCamelCase(task: NonNullable<Awaited<ReturnType<typeof findTask
     startDate: task.start_date,
     endDate: task.end_date,
     images: task.images,
+    videos: task.videos || [],
     createdAt: task.created_at,
     updatedAt: task.updated_at,
   }
@@ -48,6 +49,7 @@ export async function PATCH(
       ...(body.priority !== undefined && { priority: body.priority }),
       ...(body.pinned !== undefined && { pinned: body.pinned }),
       ...(Array.isArray(body.images) && { images: body.images }),
+      ...(Array.isArray(body.videos) && { videos: body.videos }),
     })
     
     return NextResponse.json(mapTaskToCamelCase(updatedTask))
