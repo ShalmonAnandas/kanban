@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { findTaskOwnedBy, deleteTasksByIds } from '@/lib/db-queries'
+import { findTasksOwnedByIds, deleteTasksByIds } from '@/lib/db-queries'
 import { getUserId } from '@/lib/session'
 
 export async function POST(request: Request) {
@@ -14,12 +14,9 @@ export async function POST(request: Request) {
       )
     }
 
-    // Verify all tasks belong to user
-    const checks = await Promise.all(
-      taskIds.map((id: string) => findTaskOwnedBy(id, userId))
-    )
-    const unauthorized = checks.some((t) => !t)
-    if (unauthorized) {
+    // Verify all tasks belong to user in a single query
+    const ownedTasks = await findTasksOwnedByIds(taskIds, userId)
+    if (ownedTasks.length !== taskIds.length) {
       return NextResponse.json(
         { error: 'One or more tasks not found or not owned by user' },
         { status: 404 }

@@ -649,6 +649,16 @@ export async function findTaskByTitleInBoard(title: string, boardId: string): Pr
   return null
 }
 
+export async function findTasksOwnedByIds(taskIds: string[], userId: string): Promise<DbTask[]> {
+  const rows = await sql`
+    SELECT t.* FROM tasks t
+    JOIN columns c ON t.column_id = c.id
+    JOIN boards b ON c.board_id = b.id
+    WHERE t.id = ANY(${taskIds}) AND b.user_id = ${userId}
+  ` as DbTask[]
+  return rows.map(decryptTask)
+}
+
 export async function deleteTasksByIds(taskIds: string[]): Promise<void> {
   await sql`DELETE FROM tasks WHERE id = ANY(${taskIds})`
 }

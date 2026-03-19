@@ -229,9 +229,6 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
-  // Merge column
-
-
   // Task movement timeline
   type TaskMovement = { id: string; taskId: string; fromColumnTitle: string; toColumnTitle: string; movedAt: string }
   const [taskMovements, setTaskMovements] = useState<TaskMovement[]>([])
@@ -1593,9 +1590,10 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
         })
 
         // Auto-filter
+        const colCount = sheet.columns?.length || 10
         sheet.autoFilter = {
           from: { row: 1, column: 1 },
-          to: { row: 1, column: 10 },
+          to: { row: 1, column: colCount },
         }
 
         // Freeze header row
@@ -1729,8 +1727,8 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   >
                     <div className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{task.title}</div>
                     {task.description && (
-                      <div className="text-[10px] text-gray-400 truncate mt-0.5">
-                        <MarkdownRenderer content={task.description.slice(0, 100)} />
+                      <div className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 overflow-hidden [&_*]:text-[10px] [&_*]:text-gray-400 [&_*]:!mb-0">
+                        <MarkdownRenderer content={task.description} />
                       </div>
                     )}
                     {task.subtasks?.some(st => st.title.toLowerCase().includes(searchQuery.toLowerCase())) && (
