@@ -230,7 +230,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
   // Merge column
-  const [mergeSourceColumnId, setMergeSourceColumnId] = useState<string | null>(null)
+
 
   // Task movement timeline
   type TaskMovement = { id: string; taskId: string; fromColumnTitle: string; toColumnTitle: string; movedAt: string }
@@ -1194,7 +1194,6 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               .map((c) => c.id === toColumnId ? { ...c, tasks: mergedTasks } : c),
           }
         })
-        setMergeSourceColumnId(null)
       }
     } catch (error) {
       console.error('Failed to merge columns:', error)
