@@ -859,20 +859,20 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     }
   }
 
-  const handleCreateTask = async (opts: { columnId: string; title: string; priority: string; description?: string | null; images?: string[]; videos?: string[] }) => {
+  const handleCreateTask = async (opts: { columnId: string; title: string; priority: string; description?: string | null; images?: string[]; videos?: string[] }): Promise<Task | null> => {
     const { columnId, title, priority, description, images, videos } = opts
     // Handle #jira prefix for bulk ticket creation (client-side)
     if (title.startsWith('#jira ')) {
       const jiraBaseUrl = board.jiraBaseUrl
       if (!jiraBaseUrl) {
         console.error('Board does not have a JIRA Base URL configured')
-        return
+        return null
       }
 
       const numbers = title.slice(6).split(',').map((n: string) => n.trim()).filter(Boolean)
       if (numbers.length === 0) {
         console.error('No ticket numbers provided after #jira prefix')
-        return
+        return null
       }
 
       // Validate ticket numbers
@@ -880,7 +880,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       const invalidTickets = numbers.filter(num => !validTicket.test(num))
       if (invalidTickets.length > 0) {
         console.error('Invalid ticket numbers:', invalidTickets.join(', '))
-        return
+        return null
       }
 
       // Ensure jiraBaseUrl ends with a separator
@@ -958,7 +958,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
           return { ...prevBoard, columns: newColumns }
         })
       }
-      return
+      return null
     }
 
     // Regular task creation - check for duplicates first
@@ -970,7 +970,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       setTimeout(() => setDuplicateToast(null), 4000)
       // Open the existing task instead of creating a new one
       openTaskModal(existingTask)
-      return
+      return null
     }
 
     const response = await fetch('/api/tasks', {
@@ -999,8 +999,10 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
         })
         return { ...prevBoard, columns: newColumns }
       })
+      return newTasks[0] || null
     } else {
       console.error('Failed to create task:', response.status)
+      return null
     }
   }
 
@@ -1102,7 +1104,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     if (!addTaskColumnId || !addTaskTitle.trim()) return
     setCreatingTask(true)
     try {
-      await handleCreateTask({
+      const createdTask = await handleCreateTask({
         columnId: addTaskColumnId,
         title: addTaskTitle.trim(),
         priority: addTaskPriority,
@@ -1111,15 +1113,10 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
         videos: addTaskVideos,
       })
       // Create subtasks if any were added during creation
-      if (addTaskSubtasks.length > 0) {
-        // Find the newly created task (last task in the column)
-        const col = board.columns.find((c) => c.id === addTaskColumnId)
-        const lastTask = col?.tasks[col.tasks.length - 1]
-        if (lastTask) {
-          for (const st of addTaskSubtasks) {
-            if (st.title.trim()) {
-              await handleAddSubtask(lastTask.id, st.title.trim())
-            }
+      if (createdTask && addTaskSubtasks.length > 0) {
+        for (const st of addTaskSubtasks) {
+          if (st.title.trim()) {
+            await handleAddSubtask(createdTask.id, st.title.trim())
           }
         }
       }
@@ -1185,7 +1182,11 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
           const fromCol = prev.columns.find((c) => c.id === fromColumnId)
           const toCol = prev.columns.find((c) => c.id === toColumnId)
           if (!fromCol || !toCol) return prev
-          const mergedTasks = [...toCol.tasks, ...fromCol.tasks.map((t, i) => ({ ...t, columnId: toColumnId, order: toCol.tasks.length + i }))]
+          const startOrder = toCol.tasks.length
+          const mergedTasks = [
+            ...toCol.tasks,
+            ...fromCol.tasks.map((t, i) => ({ ...t, columnId: toColumnId, order: startOrder + i })),
+          ]
           return {
             ...prev,
             columns: prev.columns
