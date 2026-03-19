@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import {
   findTaskOwnedBy,
   findColumnOwnedBy,
+  findColumnById,
   decrementTaskOrders,
   incrementTaskOrders,
   decrementTaskOrdersAbove,
   incrementTaskOrdersAbove,
   moveTask,
+  createTaskMovement,
 } from '@/lib/db-queries'
 import { getUserId } from '@/lib/session'
 
@@ -65,6 +67,22 @@ export async function POST(request: Request) {
     }
 
     const updatedTask = await moveTask(taskId, columnId, newOrder, dateUpdates)
+
+    // Record task movement if column changed
+    if (oldColumnId !== columnId) {
+      try {
+        const oldColumn = await findColumnById(oldColumnId)
+        if (oldColumn && targetColumn) {
+          await createTaskMovement({
+            taskId,
+            fromColumnTitle: oldColumn.title,
+            toColumnTitle: targetColumn.title,
+          })
+        }
+      } catch (err) {
+        console.error('[Reorder API] Failed to record task movement:', err)
+      }
+    }
     
     // Return camelCase for client
     return NextResponse.json({
@@ -78,6 +96,7 @@ export async function POST(request: Request) {
       startDate: updatedTask.start_date,
       endDate: updatedTask.end_date,
       images: updatedTask.images,
+      videos: updatedTask.videos || [],
       createdAt: updatedTask.created_at,
       updatedAt: updatedTask.updated_at,
     })

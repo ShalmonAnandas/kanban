@@ -84,4 +84,23 @@ export async function initSchema(): Promise<void> {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_subtasks_task_id ON subtasks(task_id)
   `
+
+  // Add videos column to tasks (safe if already exists)
+  await sql`
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS videos TEXT[] DEFAULT '{}'
+  `
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS task_movements (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      from_column_title TEXT NOT NULL,
+      to_column_title TEXT NOT NULL,
+      moved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_task_movements_task_id ON task_movements(task_id)
+  `
 }

@@ -18,19 +18,23 @@ export async function POST(request: Request) {
     }
 
     // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'video/mp4', 'video/webm', 'video/quicktime',
+    ]
     if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
-        { error: 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.' },
+        { error: 'Invalid file type. Only JPEG, PNG, GIF, WebP images and MP4, WebM, MOV videos are allowed.' },
         { status: 400 }
       )
     }
 
-    // Validate file size (max 5MB)
-    const maxSize = 5 * 1024 * 1024
+    // Validate file size (max 5MB for images, 50MB for videos)
+    const isVideo = file.type.startsWith('video/')
+    const maxSize = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024
     if (file.size > maxSize) {
       return NextResponse.json(
-        { error: 'File too large. Maximum size is 5MB.' },
+        { error: isVideo ? 'File too large. Maximum size is 50MB for videos.' : 'File too large. Maximum size is 5MB.' },
         { status: 400 }
       )
     }
@@ -41,6 +45,9 @@ export async function POST(request: Request) {
       'image/png': 'png',
       'image/gif': 'gif',
       'image/webp': 'webp',
+      'video/mp4': 'mp4',
+      'video/webm': 'webm',
+      'video/quicktime': 'mov',
     }
     const ext = extMap[file.type] || 'bin'
     const uniqueName = `${crypto.randomUUID()}.${ext}`

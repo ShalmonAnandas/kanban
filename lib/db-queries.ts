@@ -44,8 +44,17 @@ export type DbTask = {
   start_date: string | null
   end_date: string | null
   images: string[]
+  videos: string[]
   created_at: string
   updated_at: string
+}
+
+export type DbTaskMovement = {
+  id: string
+  task_id: string
+  from_column_title: string
+  to_column_title: string
+  moved_at: string
 }
 
 export type DbSubTask = {
@@ -79,6 +88,7 @@ function decryptTask(row: DbTask): DbTask {
     ...row,
     title: decrypt(row.title),
     description: decryptNullable(row.description),
+    videos: row.videos || [],
   }
 }
 
@@ -383,11 +393,12 @@ export async function createTask(data: {
   order: number
   startDate?: Date
   images?: string[]
+  videos?: string[]
 }) {
   const id = createId()
   const now = new Date().toISOString()
   const rows = await sql`
-    INSERT INTO tasks (id, title, description, priority, "order", column_id, start_date, images, created_at, updated_at)
+    INSERT INTO tasks (id, title, description, priority, "order", column_id, start_date, images, videos, created_at, updated_at)
     VALUES (
       ${id},
       ${encrypt(data.title)},
@@ -397,6 +408,7 @@ export async function createTask(data: {
       ${data.columnId},
       ${data.startDate ? data.startDate.toISOString() : null},
       ${data.images || []},
+      ${data.videos || []},
       ${now},
       ${now}
     )
@@ -413,6 +425,7 @@ export async function updateTask(taskId: string, data: {
   priority?: string
   pinned?: boolean
   images?: string[]
+  videos?: string[]
   startDate?: Date | null
   endDate?: Date | null
 }) {
@@ -438,6 +451,9 @@ export async function updateTask(taskId: string, data: {
   }
   if (data.images !== undefined) {
     await sql`UPDATE tasks SET images = ${data.images}, updated_at = ${now} WHERE id = ${taskId}`
+  }
+  if (data.videos !== undefined) {
+    await sql`UPDATE tasks SET videos = ${data.videos}, updated_at = ${now} WHERE id = ${taskId}`
   }
   if (data.startDate !== undefined) {
     await sql`UPDATE tasks SET start_date = ${data.startDate ? data.startDate.toISOString() : null}, updated_at = ${now} WHERE id = ${taskId}`
@@ -570,4 +586,60 @@ export async function getLastSubtaskOrder(taskId: string): Promise<number> {
     SELECT "order" FROM subtasks WHERE task_id = ${taskId} ORDER BY "order" DESC LIMIT 1
   `
   return rows[0] ? (rows[0].order as number) : -1
+}
+
+// ─── Task Movements ─────────────────────────────────────────────────────────
+
+export async function createTaskMovement(data: {
+  taskId: string
+  fromColumnTitle: string
+  toColumnTitle: string
+}): Promise<DbTaskMovement> {
+  const id = createId()
+  const now = new Date().toISOString()
+  const rows = await sql`
+    INSERT INTO task_movements (id, task_id, from_column_title, to_column_title, moved_at)
+    VALUES (${id}, ${data.taskId}, ${encrypt(data.fromColumnTitle)}, ${encrypt(data.toColumnTitle)}, ${now})
+    RETURNING *
+  ` as DbTaskMovement[]
+  return {
+    ...rows[0],
+    from_column_title: decrypt(rows[0].from_column_title),
+    to_column_title: decrypt(rows[0].to_column_title),
+  }
+}
+
+export async function findTaskMovementsByTaskId(taskId: string): Promise<DbTaskMovement[]> {
+  const rows = await sql`
+    SELECT * FROM task_movements WHERE task_id = ${taskId} ORDER BY moved_at ASC
+  ` as DbTaskMovement[]
+  return rows.map((r) => ({
+    ...r,
+    from_column_title: decrypt(r.from_column_title),
+    to_column_title: decrypt(r.to_column_title),
+  }))
+}
+
+// ─── Bulk Operations ────────────────────────────────────────────────────────
+
+export async function moveAllTasksToColumn(fromColumnId: string, toColumnId: string, startOrder: number): Promise<void> {
+  await sql`UPDATE tasks SET column_id = ${toColumnId}, "order" = "order" + ${startOrder} WHERE column_id = ${fromColumnId}`
+}
+
+export async function findTaskByTitleInBoard(title: string, boardId: string): Promise<DbTask | null> {
+  const rows = await sql`
+    SELECT t.* FROM tasks t
+    JOIN columns c ON t.column_id = c.id
+    WHERE c.board_id = ${boardId}
+  ` as DbTask[]
+  // Need to decrypt titles and compare since they're encrypted
+  for (const row of rows) {
+    const decrypted = decryptTask(row)
+    if (decrypted.title === title) return decrypted
+  }
+  return null
+}
+
+export async function deleteTasksByIds(taskIds: string[]): Promise<void> {
+  await sql`DELETE FROM tasks WHERE id = ANY(${taskIds})`
 }

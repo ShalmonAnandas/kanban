@@ -51,9 +51,12 @@ type TaskCardProps = {
   onView?: (task: Task) => void
   onTogglePin?: () => void
   pinnedCount?: number
+  selected?: boolean
+  onSelect?: (taskId: string) => void
+  selectionMode?: boolean
 }
 
-export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView, onTogglePin, pinnedCount = 0 }: TaskCardProps) {
+export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView, onTogglePin, pinnedCount = 0, selected, onSelect, selectionMode }: TaskCardProps) {
   const sortable = useSortable({ id: task.id, disabled: isOverlay })
 
   const style = isOverlay
@@ -67,6 +70,10 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
   const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.medium
 
   const handleCardClick = () => {
+    if (selectionMode && onSelect) {
+      onSelect(task.id)
+      return
+    }
     if (onView && !isDragging && !isOverlay && !sortable.isDragging) {
       onView(task)
     }
@@ -79,19 +86,37 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
       ref={isOverlay ? undefined : sortable.setNodeRef}
       style={style}
       {...(isOverlay ? {} : sortable.attributes)}
-      {...(isOverlay ? {} : sortable.listeners)}
       onClick={handleCardClick}
       className={`bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200/80 dark:border-gray-700/80 border-l-[3px] ${priority.accent} group select-none ${
         task.pinned ? 'ring-1 ring-amber-300/50 dark:ring-amber-600/50' : ''
+      } ${
+        selected ? 'ring-2 ring-violet-400 dark:ring-violet-500 bg-violet-50/50 dark:bg-violet-900/20' : ''
       } ${
         isDragging || isOverlay
           ? 'shadow-xl ring-2 ring-violet-300/50 rotate-[1.5deg] scale-[1.02]'
           : sortable.isDragging
             ? 'opacity-40'
-            : 'shadow-sm hover:shadow-md hover:border-gray-300/80 dark:hover:border-gray-600/80 cursor-grab active:cursor-grabbing'
+            : 'shadow-sm hover:shadow-md hover:border-gray-300/80 dark:hover:border-gray-600/80'
       } transition-shadow duration-150`}
     >
       <div className="flex items-start justify-between gap-2">
+        {/* Drag handle */}
+        {!isDragging && !isOverlay && (
+          <button
+            {...sortable.listeners}
+            className="cursor-grab active:cursor-grabbing text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors shrink-0 mt-0.5 touch-none"
+            aria-label="Drag to reorder task"
+          >
+            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+              <circle cx="7" cy="4" r="1.5" />
+              <circle cx="13" cy="4" r="1.5" />
+              <circle cx="7" cy="10" r="1.5" />
+              <circle cx="13" cy="10" r="1.5" />
+              <circle cx="7" cy="16" r="1.5" />
+              <circle cx="13" cy="16" r="1.5" />
+            </svg>
+          </button>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-1.5">
             <span className={`w-2 h-2 rounded-full shrink-0 ${priority.dot}`} />
@@ -122,6 +147,14 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
               <span className="text-[10px] text-gray-400">{task.images.length}</span>
             </div>
           )}
+          {task.videos && task.videos.length > 0 && (
+            <div className="flex items-center gap-1 mt-1.5">
+              <svg className="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <span className="text-[10px] text-gray-400">{task.videos.length}</span>
+            </div>
+          )}
           {task.subtasks && task.subtasks.length > 0 && (
             <div className="flex items-center gap-1 mt-1.5">
               <svg className="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,7 +171,18 @@ export function TaskCard({ task, isDragging, isOverlay, onDelete, onEdit, onView
             </div>
           )}
         </div>
-        {!isDragging && !isOverlay && (
+        {!isDragging && !isOverlay && selectionMode && (
+          <div className="shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={!!selected}
+              onChange={() => onSelect?.(task.id)}
+              className="rounded border-gray-300 text-violet-500 focus:ring-violet-400"
+              aria-label="Select task"
+            />
+          </div>
+        )}
+        {!isDragging && !isOverlay && !selectionMode && (
           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
             {onTogglePin && canPin && (
               <button

@@ -38,6 +38,11 @@ type KanbanColumnProps = {
   sortConfig?: SortConfig
   isOver?: boolean
   isOverlay?: boolean
+  selectionMode?: boolean
+  selectedTaskIds?: Set<string>
+  onSelectTask?: (taskId: string) => void
+  onMergeColumn?: (fromColumnId: string, toColumnId: string) => void
+  allColumns: Column[]
 }
 
 export function KanbanColumn({
@@ -53,6 +58,11 @@ export function KanbanColumn({
   sortConfig,
   isOver,
   isOverlay,
+  selectionMode,
+  selectedTaskIds,
+  onSelectTask,
+  onMergeColumn,
+  allColumns,
 }: KanbanColumnProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
@@ -61,6 +71,7 @@ export function KanbanColumn({
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showCustomColor, setShowCustomColor] = useState(false)
   const [showSortMenu, setShowSortMenu] = useState(false)
+  const [showMergeMenu, setShowMergeMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const sortRef = useRef<HTMLDivElement>(null)
 
@@ -88,6 +99,7 @@ export function KanbanColumn({
         setConfirmDelete(false)
         setShowColorPicker(false)
         setShowCustomColor(false)
+        setShowMergeMenu(false)
       }
     }
     if (showMenu) document.addEventListener('mousedown', handleClick)
@@ -346,6 +358,40 @@ export function KanbanColumn({
                     )}
                   </div>
                 )}
+                {/* Merge into option */}
+                {onMergeColumn && allColumns.length > 1 && (
+                  <>
+                    <button
+                      onClick={() => setShowMergeMenu((v) => !v)}
+                      className="w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+                    >
+                      Merge into…
+                    </button>
+                    {showMergeMenu && (
+                      <div className="px-2 py-1 space-y-0.5">
+                        {allColumns.filter((c) => c.id !== column.id).map((target) => (
+                          <button
+                            key={target.id}
+                            onClick={() => {
+                              onMergeColumn(column.id, target.id)
+                              setShowMenu(false)
+                              setShowMergeMenu(false)
+                            }}
+                            className="w-full text-left px-2 py-1 text-[10px] hover:bg-violet-50 dark:hover:bg-violet-900/30 text-gray-600 dark:text-gray-400 rounded transition-colors flex items-center gap-1.5"
+                          >
+                            {target.color && (
+                              <span
+                                className="inline-block w-2.5 h-2.5 rounded-full shrink-0 border border-gray-200 dark:border-gray-600"
+                                style={{ backgroundColor: target.color }}
+                              />
+                            )}
+                            {target.title}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
                 <hr className="my-1 border-gray-100 dark:border-gray-700" />
                 <button
                   onClick={handleDelete}
@@ -381,6 +427,9 @@ export function KanbanColumn({
               onView={onViewTask}
               onTogglePin={() => onTogglePin(task.id)}
               pinnedCount={column.tasks.filter((t) => t.pinned).length}
+              selectionMode={selectionMode}
+              selected={selectedTaskIds?.has(task.id)}
+              onSelect={onSelectTask}
             />
           ))}
           {column.tasks.length === 0 && (
