@@ -435,7 +435,6 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
       })),
     }))
     setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, priority } : prev))
-    setEditPriority(priority)
     try {
       const response = await fetch(`/api/tasks/${taskId}`, {
         method: 'PATCH',
@@ -2382,7 +2381,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   </div>
                 )}
 
-                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Priority</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Criticality</label>
                 <select
                   value={editPriority}
                   onChange={(e) => setEditPriority(e.target.value)}
@@ -2574,7 +2573,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               </div>
             )}
 
-            <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Priority</label>
+            <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Criticality</label>
             <select
               value={addTaskPriority}
               onChange={(e) => setAddTaskPriority(e.target.value)}
