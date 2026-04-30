@@ -423,6 +423,47 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
     setTaskMovements([])
   }
 
+  // Update just the priority of a task (used by inline criticality selector in the
+  // task summary view, so users can change criticality without entering edit mode).
+  const handleUpdateTaskPriority = async (taskId: string, priority: string) => {
+    // Optimistic local update
+    setBoard((prev) => ({
+      ...prev,
+      columns: prev.columns.map((col) => ({
+        ...col,
+        tasks: col.tasks.map((t) => (t.id === taskId ? { ...t, priority } : t)),
+      })),
+    }))
+    setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, priority } : prev))
+    setEditPriority(priority)
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority }),
+      })
+      if (!response.ok) throw new Error('Failed to update priority')
+      const updatedTask: Task = await response.json()
+      setBoard((prev) => ({
+        ...prev,
+        columns: prev.columns.map((col) => ({
+          ...col,
+          tasks: col.tasks.map((t) =>
+            t.id === updatedTask.id
+              ? {
+                  ...t,
+                  priority: updatedTask.priority,
+                  updatedAt: String(updatedTask.updatedAt),
+                }
+              : t
+          ),
+        })),
+      }))
+    } catch (error) {
+      console.error('Failed to update task priority:', error)
+    }
+  }
+
   const handleSaveTask = async () => {
     if (!selectedTask) return
     setSavingTask(true)
@@ -2132,29 +2173,59 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   </button>
                 </div>
 
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
-                <div className="text-sm text-gray-800 mb-3 break-words">
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Title</label>
+                <div className="text-sm text-gray-800 dark:text-gray-200 mb-3 break-words">
                   <MarkdownRenderer content={selectedTask.title} />
                 </div>
 
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Description</label>
-                <div className="text-xs text-gray-700 mb-3 bg-gray-50 rounded-lg px-3 py-2 min-h-[3rem]">
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Description</label>
+                <div className="text-xs text-gray-700 dark:text-gray-300 mb-3 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2 min-h-[3rem]">
                   {selectedTask.description ? (
                     <MarkdownRenderer content={selectedTask.description} />
                   ) : (
-                    <span className="text-gray-400 italic">No description</span>
+                    <span className="text-gray-400 dark:text-gray-500 italic">No description</span>
                   )}
                 </div>
 
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
-                <p className="text-xs text-gray-700 mb-3 capitalize">{selectedTask.priority.replace('_', ' ')}</p>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Criticality</label>
+                <div className="mb-3 flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      selectedTask.priority === 'critical' ? 'bg-red-500'
+                        : selectedTask.priority === 'high' ? 'bg-orange-500'
+                        : selectedTask.priority === 'medium' ? 'bg-blue-500'
+                        : selectedTask.priority === 'low' ? 'bg-emerald-500'
+                        : 'bg-gray-400'
+                    }`}
+                    aria-hidden
+                  />
+                  <select
+                    value={selectedTask.priority}
+                    onChange={(e) => handleUpdateTaskPriority(selectedTask.id, e.target.value)}
+                    aria-label="Change criticality"
+                    title="Change criticality"
+                    className={`px-2 py-1 rounded-md text-xs font-medium capitalize border focus:outline-none focus:ring-2 focus:ring-violet-400 cursor-pointer transition-colors ${
+                      selectedTask.priority === 'critical' ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
+                        : selectedTask.priority === 'high' ? 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800'
+                        : selectedTask.priority === 'medium' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                        : selectedTask.priority === 'low' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                        : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                    }`}
+                  >
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                    <option value="nice_to_have">Nice to have</option>
+                  </select>
+                </div>
 
                 {selectedTask.images && selectedTask.images.length > 0 && (
                   <>
-                    <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Images</label>
+                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Images</label>
                     <div className="flex flex-wrap gap-2 mb-3">
                       {selectedTask.images.map((url, idx) => (
-                        <Image key={idx} src={url} alt={`Attachment ${idx + 1}`} width={80} height={80} className="w-20 h-20 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
+                        <Image key={idx} src={url} alt={`Attachment ${idx + 1}`} width={80} height={80} className="w-20 h-20 object-cover rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
                       ))}
                     </div>
                   </>
@@ -2162,24 +2233,24 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
 
                 {selectedTask.videos && selectedTask.videos.length > 0 && (
                   <>
-                    <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Videos</label>
+                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Videos</label>
                     <div className="flex flex-wrap gap-2 mb-3">
                       {selectedTask.videos.map((url, idx) => (
-                        <video key={idx} src={url} controls className="w-48 rounded-lg border border-gray-200" />
+                        <video key={idx} src={url} controls className="w-48 rounded-lg border border-gray-200 dark:border-gray-700" />
                       ))}
                     </div>
                   </>
                 )}
 
                 {(selectedTask.startDate || selectedTask.endDate) && (
-                  <div className="flex gap-3 mb-3 text-[10px] text-gray-500">
+                  <div className="flex gap-3 mb-3 text-[10px] text-gray-500 dark:text-gray-400">
                     {selectedTask.startDate && (
-                      <div className="bg-gray-50 px-2 py-1 rounded-md">
+                      <div className="bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded-md">
                         <span className="font-semibold">Start:</span> {formatDateDisplay(selectedTask.startDate)}
                       </div>
                     )}
                     {selectedTask.endDate && (
-                      <div className="bg-gray-50 px-2 py-1 rounded-md">
+                      <div className="bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded-md">
                         <span className="font-semibold">End:</span> {formatDateDisplay(selectedTask.endDate)}
                       </div>
                     )}
@@ -2187,7 +2258,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 )}
 
                 {/* Subtasks */}
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Subtasks</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Subtasks</label>
                 <div className="mb-3 space-y-1">
                   {(selectedTask.subtasks || []).map((st) => (
                     <div key={st.id} className="flex items-center gap-2 group">
@@ -2195,12 +2266,12 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                         type="checkbox"
                         checked={st.done}
                         onChange={() => handleToggleSubtask(st.id, !st.done)}
-                        className="rounded border-gray-300 text-violet-500 focus:ring-violet-400"
+                        className="rounded border-gray-300 dark:border-gray-600 text-violet-500 focus:ring-violet-400"
                       />
-                      <span className={`text-xs flex-1 ${st.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>{st.title}</span>
+                      <span className={`text-xs flex-1 ${st.done ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>{st.title}</span>
                       <button
                         onClick={() => handleDeleteSubtask(st.id)}
-                        className="text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-0.5"
+                        className="text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-0.5"
                         aria-label="Delete subtask"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2216,7 +2287,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                       onChange={(e) => setNewSubtaskTitle(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter' && selectedTask) { e.preventDefault(); handleAddSubtask(selectedTask.id, newSubtaskTitle) } }}
                       placeholder="Add subtask..."
-                      className="flex-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                      className="flex-1 px-2 py-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-violet-400"
                     />
                     <button
                       onClick={() => selectedTask && handleAddSubtask(selectedTask.id, newSubtaskTitle)}
@@ -2230,23 +2301,23 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 </div>
 
                 {/* Task Movement Timeline */}
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Movement Timeline</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Movement Timeline</label>
                 <div className="mb-3">
                   {loadingMovements ? (
-                    <div className="flex items-center gap-2 text-xs text-gray-400"><Spinner size="sm" className="text-gray-400" /> Loading...</div>
+                    <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500"><Spinner size="sm" className="text-gray-400" /> Loading...</div>
                   ) : taskMovements.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic">No movements recorded</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 italic">No movements recorded</p>
                   ) : (
                     <div className="space-y-1.5">
                       {taskMovements.map((m) => (
-                        <div key={m.id} className="flex items-center gap-2 text-[10px] text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-md px-2 py-1.5">
-                          <svg className="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div key={m.id} className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-md px-2 py-1.5">
+                          <svg className="w-3 h-3 text-gray-400 dark:text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                           </svg>
                           <span className="font-medium">{m.fromColumnTitle}</span>
                           <span className="text-gray-300 dark:text-gray-600">→</span>
                           <span className="font-medium">{m.toColumnTitle}</span>
-                          <span className="text-gray-400 ml-auto">{formatDateDisplay(m.movedAt)}</span>
+                          <span className="text-gray-400 dark:text-gray-500 ml-auto">{formatDateDisplay(m.movedAt)}</span>
                         </div>
                       ))}
                     </div>
@@ -2256,7 +2327,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 <div className="flex justify-end mt-1">
                   <button
                     onClick={closeTaskModal}
-                    className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors font-medium"
+                    className="px-3 py-1.5 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-xs transition-colors font-medium"
                   >
                     Close
                   </button>
@@ -2264,30 +2335,30 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               </>
             ) : (
               <>
-                <h2 id="task-modal-title" className="text-sm font-bold text-gray-900 mb-4">Edit Task</h2>
+                <h2 id="task-modal-title" className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4">Edit Task</h2>
 
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Title</label>
                 <input
                   type="text"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
+                  className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
                 />
 
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Description</label>
-                  <div className="flex items-center gap-1 bg-gray-100 rounded-md p-0.5">
+                  <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Description</label>
+                  <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-md p-0.5">
                     <button
                       type="button"
                       onClick={() => setEditorMode('rich')}
-                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${editorMode === 'rich' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${editorMode === 'rich' ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                     >
                       Rich
                     </button>
                     <button
                       type="button"
                       onClick={() => setEditorMode('markdown')}
-                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${editorMode === 'markdown' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${editorMode === 'markdown' ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                     >
                       Markdown
                     </button>
@@ -2298,7 +2369,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
+                    className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
                     placeholder="Add a description (supports markdown)..."
                   />
                 ) : (
@@ -2311,11 +2382,11 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   </div>
                 )}
 
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Priority</label>
                 <select
                   value={editPriority}
                   onChange={(e) => setEditPriority(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
+                  className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
                 >
                   <option value="critical">Critical</option>
                   <option value="high">High</option>
@@ -2325,13 +2396,13 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 </select>
 
                 {/* Image upload */}
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Images</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Images</label>
                 <div className="mb-3">
                   {editImages.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-2">
                       {editImages.map((url, idx) => (
                         <div key={idx} className="relative group">
-                          <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
+                          <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
                           <button
                             type="button"
                             onClick={() => setEditImages((prev) => prev.filter((_, i) => i !== idx))}
@@ -2344,7 +2415,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                       ))}
                     </div>
                   )}
-                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors">
                     {uploadingImage ? <Spinner size="sm" className="text-violet-500" /> : (
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -2368,13 +2439,13 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 </div>
 
                 {/* Video upload (edit mode) */}
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Videos</label>
+                <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Videos</label>
                 <div className="mb-3">
                   {editVideos.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-2">
                       {editVideos.map((url, idx) => (
                         <div key={idx} className="relative group">
-                          <video src={url} className="w-32 h-20 object-cover rounded-lg border border-gray-200" />
+                          <video src={url} className="w-32 h-20 object-cover rounded-lg border border-gray-200 dark:border-gray-700" />
                           <button
                             type="button"
                             onClick={() => setEditVideos((prev) => prev.filter((_, i) => i !== idx))}
@@ -2387,7 +2458,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                       ))}
                     </div>
                   )}
-                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors">
                     {uploadingVideo ? <Spinner size="sm" className="text-violet-500" /> : (
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -2411,14 +2482,14 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 </div>
 
                 {(selectedTask.startDate || selectedTask.endDate) && (
-                  <div className="flex gap-3 mb-3 text-[10px] text-gray-500">
+                  <div className="flex gap-3 mb-3 text-[10px] text-gray-500 dark:text-gray-400">
                     {selectedTask.startDate && (
-                      <div className="bg-gray-50 px-2 py-1 rounded-md">
+                      <div className="bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded-md">
                         <span className="font-semibold">Start:</span> {formatDateDisplay(selectedTask.startDate)}
                       </div>
                     )}
                     {selectedTask.endDate && (
-                      <div className="bg-gray-50 px-2 py-1 rounded-md">
+                      <div className="bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded-md">
                         <span className="font-semibold">End:</span> {formatDateDisplay(selectedTask.endDate)}
                       </div>
                     )}
@@ -2428,7 +2499,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 <div className="flex justify-end gap-2 mt-1">
                   <button
                     onClick={closeTaskModal}
-                    className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors font-medium"
+                    className="px-3 py-1.5 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-xs transition-colors font-medium"
                   >
                     Cancel
                   </button>
@@ -2456,30 +2527,30 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
           >
             <h2 id="add-task-modal-title" className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4">Add Task</h2>
 
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Title</label>
+            <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Title</label>
             <input
               type="text"
               value={addTaskTitle}
               onChange={(e) => setAddTaskTitle(e.target.value)}
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
+              className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
               placeholder="Task title…"
               autoFocus
             />
 
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Description</label>
-              <div className="flex items-center gap-1 bg-gray-100 rounded-md p-0.5">
+              <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Description</label>
+              <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-md p-0.5">
                 <button
                   type="button"
                   onClick={() => setAddTaskEditorMode('rich')}
-                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${addTaskEditorMode === 'rich' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${addTaskEditorMode === 'rich' ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                 >
                   Rich
                 </button>
                 <button
                   type="button"
                   onClick={() => setAddTaskEditorMode('markdown')}
-                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${addTaskEditorMode === 'markdown' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${addTaskEditorMode === 'markdown' ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                 >
                   Markdown
                 </button>
@@ -2490,7 +2561,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                 value={addTaskDescription}
                 onChange={(e) => setAddTaskDescription(e.target.value)}
                 rows={4}
-                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
+                className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3 resize-y font-mono"
                 placeholder="Add a description (supports markdown)..."
               />
             ) : (
@@ -2503,11 +2574,11 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
               </div>
             )}
 
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Priority</label>
+            <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Priority</label>
             <select
               value={addTaskPriority}
               onChange={(e) => setAddTaskPriority(e.target.value)}
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
+              className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent mb-3"
             >
               <option value="critical">Critical</option>
               <option value="high">High</option>
@@ -2517,13 +2588,13 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             </select>
 
             {/* Image upload */}
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Images</label>
+            <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Images</label>
             <div className="mb-3">
               {addTaskImages.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
                   {addTaskImages.map((url, idx) => (
                     <div key={idx} className="relative group">
-                      <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
+                      <Image src={url} alt={`Attachment ${idx + 1}`} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewerImageUrl(url)} />
                       <button
                         type="button"
                         onClick={() => setAddTaskImages((prev) => prev.filter((_, i) => i !== idx))}
@@ -2536,7 +2607,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   ))}
                 </div>
               )}
-              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors">
                 {addTaskUploadingImage ? <Spinner size="sm" className="text-violet-500" /> : (
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -2560,13 +2631,13 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             </div>
 
             {/* Video upload (add task modal) */}
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Videos</label>
+            <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Videos</label>
             <div className="mb-3">
               {addTaskVideos.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
                   {addTaskVideos.map((url, idx) => (
                     <div key={idx} className="relative group">
-                      <video src={url} className="w-32 h-20 object-cover rounded-lg border border-gray-200" />
+                      <video src={url} className="w-32 h-20 object-cover rounded-lg border border-gray-200 dark:border-gray-700" />
                       <button
                         type="button"
                         onClick={() => setAddTaskVideos((prev) => prev.filter((_, i) => i !== idx))}
@@ -2579,7 +2650,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
                   ))}
                 </div>
               )}
-              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors">
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors">
                 {addTaskUploadingVideo ? <Spinner size="sm" className="text-violet-500" /> : (
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -2603,7 +2674,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             </div>
 
             {/* Subtasks during creation */}
-            <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Subtasks</label>
+            <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Subtasks</label>
             <div className="mb-3 space-y-1">
               {addTaskSubtasks.map((st, idx) => (
                 <div key={idx} className="flex items-center gap-2">
@@ -2654,7 +2725,7 @@ export function KanbanBoard({ initialBoard, userId }: KanbanBoardProps) {
             <div className="flex justify-end gap-2 mt-1">
               <button
                 onClick={closeAddTaskModal}
-                className="px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-50 text-xs transition-colors font-medium"
+                className="px-3 py-1.5 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-xs transition-colors font-medium"
               >
                 Cancel
               </button>

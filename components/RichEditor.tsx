@@ -157,7 +157,7 @@ export function RichEditor({ content, onChange, placeholder, className = '' }: R
     content: markdownToHtml(content),
     editorProps: {
       attributes: {
-        class: `focus:outline-none min-h-[80px] text-xs text-gray-800 ${className}`,
+        class: `focus:outline-none min-h-[80px] text-xs text-gray-800 dark:text-gray-200 ${className}`,
       },
     },
     onUpdate: ({ editor: ed }) => {
@@ -196,9 +196,9 @@ export function RichEditor({ content, onChange, placeholder, className = '' }: R
   if (!editor) return null
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 bg-white border-b border-gray-200">
+      <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive('bold')}
@@ -227,7 +227,7 @@ export function RichEditor({ content, onChange, placeholder, className = '' }: R
         >
           <span className="line-through">S</span>
         </ToolbarButton>
-        <div className="w-px h-4 bg-gray-200 mx-0.5" />
+        <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-0.5" />
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           active={editor.isActive('heading', { level: 1 })}
@@ -249,7 +249,7 @@ export function RichEditor({ content, onChange, placeholder, className = '' }: R
         >
           H3
         </ToolbarButton>
-        <div className="w-px h-4 bg-gray-200 mx-0.5" />
+        <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-0.5" />
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           active={editor.isActive('bulletList')}
@@ -284,7 +284,7 @@ export function RichEditor({ content, onChange, placeholder, className = '' }: R
         >
           {'</>'}
         </ToolbarButton>
-        <div className="w-px h-4 bg-gray-200 mx-0.5" />
+        <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-0.5" />
         <ToolbarButton onClick={setLink} active={editor.isActive('link')} title="Link">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -299,7 +299,7 @@ export function RichEditor({ content, onChange, placeholder, className = '' }: R
       {/* Editor */}
       <div className="px-3 py-2">
         {!content && !editor.getText() && placeholder && (
-          <div className="absolute text-xs text-gray-400 pointer-events-none">{placeholder}</div>
+          <div className="absolute text-xs text-gray-400 dark:text-gray-500 pointer-events-none">{placeholder}</div>
         )}
         <EditorContent editor={editor} />
       </div>
@@ -325,8 +325,8 @@ function ToolbarButton({
       title={title}
       className={`p-1 rounded text-xs font-medium transition-colors ${
         active
-          ? 'bg-violet-100 text-violet-700'
-          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+          ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+          : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200'
       }`}
     >
       {children}
